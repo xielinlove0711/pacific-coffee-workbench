@@ -33,13 +33,13 @@ const state = a => {
   const interval=Array.isArray(ci) && ci.length===2 && ci.every(numeric);
   const crosses=interval && ci[0]<=0 && ci[1]>=0;
   const label=!numeric(roi) ? '暂不可估' : !attributed ? '仅供参考' : !interval ? '仅供参考' : crosses ? '未观察到显著效果' : '证据通过';
-  const reason=a.attribution.reason || (!completeness ? '数据完整度低于 90%，正式报告已阻断。' :
+  const reason=(!completeness ? '活动期有交易记录的日期不足 90%，正式报告已阻断。' : '')+(a.attribution.reason || (!completeness ? '数据完整度低于 90%，正式报告已阻断。' :
     !g?.size ? '缺少可用对照组，当前只能查看描述性表现。' :
     !trend || !mean || !strata ? '对照组可比性检查未通过或缺失，当前结果不足以支持预算决策。' :
     !numeric(roi) ? '原型数据包暂无可用的净 ROI 估计。' :
     !attributed ? '原型证据未达到预算使用条件。' :
     !interval ? '缺少可用的 95% 置信区间，显著性待判定。' :
-    crosses ? '95% 置信区间包含 0，未观察到显著效果。' : '对照组检查通过，95% 置信区间排除 0。');
+    crosses ? '95% 置信区间包含 0，未观察到显著效果。' : '对照组检查通过，95% 置信区间排除 0。'));
   return {completeness,trend,mean,strata,roi,ci,attributed,interval,crosses,label,reason,finalize:attributed && interval && a.report.can_finalize===true};
 };
 const badge = s => '<span class="badge '+(s.label==='证据通过'?'ok':s.label==='暂不可估'?'':'warn')+'" title="'+escape(s.reason)+'">'+s.label+'</span>';
@@ -129,7 +129,7 @@ function waterfall(a,e){
   }).join('')+'</svg></div><p class="tiny muted">透支 '+money(t.pull_forward?.amount)+' · 口径仅展示透支，净毛利按增量毛利减蚕食计算。</p>';
 }
 function quality(a,e){
-  return '<div class="panel pad" id="quality"><h2>活动日历覆盖率</h2><p class="'+(e.completeness?'muted':'bad')+'">'+pct(a.data_quality.completeness)+' · '+(e.completeness?'达到 90% 日历覆盖闸门':'低于 90%，正式报告已阻断')+'</p><details class="fold"><summary>查看数据异常与待补事项</summary>'+a.data_quality.anomalies.map(n=>'<p class="sub">'+escape(n.desc)+'</p>').join('')+'</details></div>';
+  return '<div class="panel pad" id="quality"><h2>活动交易日覆盖率</h2><p class="'+(e.completeness?'muted':'bad')+'">'+pct(a.data_quality.completeness)+' · '+(e.completeness?'达到 90% 交易日覆盖闸门':'低于 90%，正式报告已阻断')+'</p><details class="fold"><summary>查看数据异常与待补事项</summary>'+a.data_quality.anomalies.map(n=>'<p class="sub">'+escape(n.desc)+'</p>').join('')+'</details></div>';
 }
 function detail(id,tab){
   const a=activities[id], s=a.activity_summary,t=a.attribution,e=state(a);
@@ -138,7 +138,7 @@ function detail(id,tab){
   const conclusion=storeMode()?'本店在活动覆盖范围内，执行差异待核对。':numeric(e.roi)?(below?'估计未回本。':'估计达到盈亏线。')+' '+(e.label==='证据通过'?'模拟结果符合归因与显著性规则。':'当前结果不足以支持预算决策。'):e.reason;
   const stats=storeMode()?[
     ['本店覆盖','已覆盖',store],['本店会员营收',money(storeRow(a)?.revenue),'活动期会员交易'],['本店会员订单',numeric(storeRow(a)?.orders)?fmt(storeRow(a).orders):'无可用数据','活动期订单（单）']
-  ]:[['净 ROI',ratio(e.roi),'盈亏线 '+fmt(rules.roi_breakeven,2)+' · 目标 '+fmt(target,2)],['参考净增量毛利',money(t.net?.net_gross_profit),'v6 校准表'],['日历覆盖率',pct(a.data_quality.completeness),'报告闸门 ≥ 90%']];
+  ]:[['净 ROI',ratio(e.roi),'盈亏线 '+fmt(rules.roi_breakeven,2)+' · 目标 '+fmt(target,2)],['参考净增量毛利',money(t.net?.net_gross_profit),'v6 校准表'],['交易日覆盖率',pct(a.data_quality.completeness),'报告闸门 ≥ 90%']];
   const tabs=[['overview','结果概览'],['evidence','归因证据'],['report','复盘报告']];
   main.innerHTML='<a class="back tiny" href="#activities">← 返回活动目录</a><div class="pagehead"><div class="row"><h1>'+escape(s.name)+'</h1>'+badge(e)+'</div><p class="sub">'+date(s.start)+' 至 '+date(s.end)+' · '+(storeMode()?store:s.stores.length+' 家覆盖门店 · '+escape(t.caliber?.campaign_window||'活动期'))+'</p></div><div class="notice row spread"><strong>'+conclusion+'</strong>'+action+'</div><div class="metrics">'+stats.map(v=>metric(...v)).join('')+'</div><nav class="tabs no-print" aria-label="详情导航">'+tabs.map(([key,label])=>link(id,key,label,key===tab?'active':'')).join('')+'</nav>'+
     (tab==='evidence'?evidence(a,e):tab==='report'?report(a,e):overview(a,e));
