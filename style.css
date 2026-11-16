@@ -40,3 +40,13 @@ button:enabled:active,.button:active,summary:active,.entry:active{filter:brightn
 @media(prefers-reduced-motion:no-preference){
   .campaign-group[open] > .scroller{animation:open-controls 160ms ease-out}
 }
+
+.summary-scope label,.toolbar label{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
+.toolbar .filterpop label{display:grid}
+.toolbar input[type=date],.toolbar input[type=number]{border:1px solid var(--line);border-radius:7px;background:var(--paper);padding:8px;color:inherit;font:inherit}
+.toolbar input[type=number]{width:105px}
+.summary-note{margin:0 0 12px}
+.summary-table{max-height:520px;overflow:auto}
+.summary-table thead th{position:sticky;top:0;z-index:1}
+.summary-table th button{color:inherit;font-weight:inherit}
+.summary-table th button:hover{color:var(--deep-red)}

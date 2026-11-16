@@ -54,10 +54,117 @@ const link = (id,tab,text,cls='',anchor='') => '<a class="'+cls+'" href="'+url(i
 const load = id => {try{return JSON.parse(localStorage.getItem('pacific-review-'+id)) || {}}catch{return {}}};
 const save = (id,value) => {try{localStorage.setItem('pacific-review-'+id,JSON.stringify(value));return true}catch{return false}};
 const reportState = id => load(id).finalized ? '已定稿' : '草稿';
-function catalog() {
+const revenueData=window.MOCK.revenue_summary;
+const summaryScope={from:revenueData.dates[0],to:revenueData.dates.at(-1),store:''};
+const viewSettings=Object.fromEntries(['day','store','activity'].map(view=>[view,{sort:view==='day'?'name':'revenue',direction:-1,minRevenue:'',minOrders:'',type:'',metric:'revenue'}]));
+let summaryView='day';
+let summaryRows=[];
+const hkd=n=>numeric(n)?fmt(n/100,2):'—';
+function availableStores(){return revenueData.stores.filter(s=>!storeMode()||s.name===store)}
+function summary(){
+  const dates=revenueData.dates;
+  const from=dates.indexOf(summaryScope.from),to=dates.indexOf(summaryScope.to);
+  const allowed=availableStores();
+  const selected=storeMode()?store:summaryScope.store;
+  const included=allowed.filter(s=>!selected||s.name===selected);
+  const days=dates.slice(from,to+1).map(name=>({name,revenue:null,orders:null}));
+  let total=0,orderTotal=0;
+  for(const shop of included){
+    for(const [d,revenue,orders] of shop.days){
+      if(d<from||d>to)continue;
+      const day=days[d-from];
+      day.revenue=(day.revenue??0)+revenue;
+      day.orders=(day.orders??0)+orders;
+      total+=revenue;
+      orderTotal+=orders;
+    }
+  }
+  const recorded=days.filter(d=>d.orders!==null).length;
+  const controls='<div class="toolbar summary-scope"><label>开始日期 <input type="date" data-scope="from" value="'+summaryScope.from+'" min="'+dates[0]+'" max="'+summaryScope.to+'"></label><label>结束日期 <input type="date" data-scope="to" value="'+summaryScope.to+'" min="'+summaryScope.from+'" max="'+dates.at(-1)+'"></label>'+
+    (storeMode()?'<span>'+escape(store)+'</span>':'<label>门店 <select data-scope="store">'+options(allowed.map(s=>s.name),'全部门店')+'</select></label>')+'</div>';
+  main.innerHTML=head('营收总览','会员交易 · FY2026 模拟数据')+
+    '<section class="panel">'+controls+'</section><section class="metrics">'+
+    metric('会员总营收（港元）',recorded?hkd(total):'—',escape(selected||'全部门店'))+
+    metric('会员订单量',recorded?fmt(orderTotal):'—','单')+
+    metric('有交易记录的天数',recorded+' / '+days.length,'所选范围内')+'</section>'+
+    '<nav class="tabs" aria-label="营收查看方式">'+[['day','按日'],['store','按门店'],['activity','按活动']].map(([key,label])=>'<a href="#summary/'+key+'" '+(key===summaryView?'class="active" aria-current="page"':'')+'>'+label+'</a>').join('')+'</nav><div id="summary-content"></div>';
+  const shopSelect=main.querySelector('[data-scope="store"]');
+  if(shopSelect)shopSelect.value=summaryScope.store;
+  const rangeTotal=(shop,lo=from,hi=to)=>shop.days.reduce((value,[d,revenue,orders])=>{
+    if(d>=lo&&d<=hi){value.revenue=(value.revenue??0)+revenue;value.orders=(value.orders??0)+orders}
+    return value;
+  },{revenue:null,orders:null});
+  if(summaryView==='day')summaryRows=days;
+  if(summaryView==='store')summaryRows=included.map(shop=>({...rangeTotal(shop),name:shop.name,type:shop.type}));
+  if(summaryView==='activity'){
+    summaryRows=visible().filter(s=>date(s.start)<=summaryScope.to&&date(s.end)>=summaryScope.from&&(!selected||s.stores.includes(selected))).map(s=>{
+      const lo=Math.max(from,dates.indexOf(date(s.start))),end=dates.indexOf(date(s.end)),hi=Math.min(to,end<0?to:end);
+      const members=new Set(s.stores);
+      let revenue=null,orders=null;
+      for(const shop of included){
+        if(!members.has(shop.name))continue;
+        const result=rangeTotal(shop,lo,hi);
+        if(result.orders===null)continue;
+        revenue=(revenue??0)+result.revenue;
+        orders=(orders??0)+result.orders;
+      }
+      return {id:s.activity_id,name:s.name,revenue,orders,period:lo<=hi?dates[lo]+' 至 '+dates[hi]:'—'};
+    });
+  }
+  const settings=viewSettings[summaryView];
+  const content=document.querySelector('#summary-content');
+  const selector=(key,label,values,first)=>'<label>'+label+' <select data-view-setting="'+key+'">'+options(values,first)+'</select></label>';
+  content.innerHTML=(summaryView==='day'?'<section class="panel pad"><div class="row spread"><h2>每日趋势</h2><label>指标 <select data-view-setting="metric"><option value="revenue">会员营收</option><option value="orders">会员订单量</option></select></label></div><div id="summary-chart"></div></section>':'')+
+    '<section class="panel"><div class="toolbar">'+
+    (summaryView==='store'?selector('type','门店类型',[...new Set(included.map(s=>s.type))],'全部类型'):'')+
+    '<label>最低营收（港元） <input type="number" min="0" step="0.01" data-view-setting="minRevenue" value="'+escape(settings.minRevenue)+'"></label>'+
+    '<label>最低订单量 <input type="number" min="0" step="1" data-view-setting="minOrders" value="'+escape(settings.minOrders)+'"></label>'+
+    (summaryView==='activity'?'<label>排序 <select data-view-setting="activitySort"><option value="revenue">营收从高到低</option><option value="orders">订单量从高到低</option><option value="name">活动名称</option></select></label>':'')+
+    '</div></section>'+
+    (summaryView==='activity'?'<p class="sub summary-note">活动营收为统计期间内参与门店的会员交易。活动可能重叠，各行不可加总，也不表示活动增量。</p><div id="activity-catalog"></div>':'<section class="panel" id="summary-results"></section>');
+  for(const key of ['type','metric','activitySort']){
+    const field=content.querySelector('[data-view-setting="'+key+'"]');
+    if(field)field.value=settings[key==='activitySort'?'sort':key];
+  }
+  if(summaryView==='activity'){catalog(document.querySelector('#activity-catalog'));return}
+  drawSummary();
+}
+function filteredSummaryRows(){
+  const settings=viewSettings[summaryView];
+  return summaryRows.filter(r=>(!settings.type||settings.type===r.type)&&
+    (settings.minRevenue===''||(r.revenue!==null&&r.revenue>=Number(settings.minRevenue)*100))&&
+    (settings.minOrders===''||(r.orders!==null&&r.orders>=Number(settings.minOrders)))).sort((a,b)=>{
+      const x=a[settings.sort],y=b[settings.sort];
+      if(x===null)return y===null?0:1;
+      if(y===null)return -1;
+      return settings.direction*(typeof x==='number'?x-y:x.localeCompare(y,'zh'));
+    });
+}
+function drawSummary(){
+  const settings=viewSettings[summaryView];
+  const rows=filteredSummaryRows();
+  const chartNode=document.querySelector('#summary-chart');
+  if(chartNode){
+    const isRevenue=settings.metric==='revenue';
+    chartNode.innerHTML=chart(summaryRows.map(r=>({date:r.name,actual:isRevenue&&r.revenue!==null?r.revenue/100:r[settings.metric],baseline:null})),
+      {heading:isRevenue?'每日会员营收':'每日会员订单量',unit:isRevenue?'港元':'单',caption:'趋势按选定日期与门店展示。无交易记录的日期留空。'});
+  }
+  const columns=[['name',summaryView==='day'?'日期':'门店'],...(summaryView==='store'?[['type','门店类型']]:[]),['revenue','会员营收（港元）'],['orders','会员订单量'],['status','记录状态']];
+  const header=columns.map(([key,label])=>{
+    const direction=settings.direction===1?'ascending':'descending';
+    const numericClass=['revenue','orders'].includes(key)?' class="num"':'';
+    return '<th scope="col"'+numericClass+(settings.sort===key?' aria-sort="'+direction+'"':'')+'>'+
+      (['name','revenue','orders'].includes(key)?'<button class="linkbutton" data-action="summary-sort" data-key="'+key+'">'+label+(settings.sort===key?(settings.direction===1?' ↑':' ↓'):'')+'</button>':label)+'</th>';
+  }).join('');
+  const body=rows.map(r=>'<tr><td>'+(summaryView==='store'?'<button class="linkbutton entry" data-action="store-days" data-store="'+escape(r.name)+'">'+escape(r.name)+'</button>':r.name)+'</td>'+
+    (summaryView==='store'?'<td>'+escape(r.type)+'</td>':'')+
+    '<td class="num">'+hkd(r.revenue)+'</td><td class="num">'+(r.orders===null?'—':fmt(r.orders))+'</td><td>'+(r.orders===null?'无交易记录':'有交易记录')+'</td></tr>').join('');
+  document.querySelector('#summary-results').innerHTML='<div class="table-head">符合条件 '+rows.length+(summaryView==='day'?' 天':' 家')+'</div>'+
+    (rows.length?'<div class="scroller summary-table"><table><thead><tr>'+header+'</tr></thead><tbody>'+body+'</tbody></table></div>':'<p class="pad">没有符合条件的记录。</p>');
+}
+function catalog(container) {
   const rows=visible();
-  const scope=storeMode()?escape(store)+' · 本店覆盖活动':role==='ops'?'增长运营组 · 我负责的活动':'FY2026 · 全部活动';
-  main.innerHTML=head('活动目录',scope)+
+  container.innerHTML=
   '<section class="panel catalog-panel" aria-label="活动检索与列表">'+
     '<div class="toolbar" role="search" aria-label="检索活动">'+
       '<input id="query" type="search" aria-label="搜索活动名称" placeholder="⌕  搜索活动名称">'+
@@ -76,7 +183,10 @@ function catalog() {
 }
 function list(){
   const q=filters.query.trim().toLowerCase();
-  const rows=visible().filter(s=>s.name.toLowerCase().includes(q) && (!filters.month||(!isLong(s)&&s.end.startsWith(filters.month))) && (!filters.status||s.status===filters.status) && (!filters.channel||s.channels.includes(filters.channel)) && (!filters.owner||s.owner===filters.owner));
+  const metricsById=new Map(filteredSummaryRows().map(row=>[row.id,row]));
+  const scope=visible().filter(s=>metricsById.has(s.activity_id));
+  const order=new Map([...metricsById.keys()].map((id,i)=>[id,i]));
+  const rows=scope.sort((a,b)=>order.get(a.activity_id)-order.get(b.activity_id)).filter(s=>s.name.toLowerCase().includes(q) && (!filters.month||(!isLong(s)&&s.end.startsWith(filters.month))) && (!filters.status||s.status===filters.status) && (!filters.channel||s.channels.includes(filters.channel)) && (!filters.owner||s.owner===filters.owner));
   document.querySelector('#result-count').textContent='共 '+rows.length+' 场活动';
   const names={month:'结束月份',status:'运行状态',channel:'渠道',owner:'负责人'};
   const chips=Object.entries(names).filter(([key])=>filters[key]).map(([key,label])=>
@@ -90,16 +200,16 @@ function list(){
   listing.dataset.filters=signature;
   const long=rows.filter(isLong);
   const short=rows.filter(s=>!isLong(s));
-  const columns=label=>(role==='manager'?'<th class="checkcell" scope="col"><span aria-label="选择对比活动">选</span></th>':'')+'<th scope="col">活动名称</th><th scope="col">'+(label==='长期活动'?'有效期':'结束时间')+'</th><th scope="col">运行状态</th><th scope="col" class="num">'+(storeMode()?'本店范围':'参考净 ROI')+'</th><th scope="col">结果可用性</th><th scope="col">操作</th>';
+  const columns=label=>(role==='manager'?'<th class="checkcell" scope="col"><span aria-label="选择对比活动">选</span></th>':'')+'<th scope="col">活动名称</th><th scope="col">'+(label==='长期活动'?'有效期':'结束时间')+'</th><th scope="col">运行状态</th><th scope="col">统计期间</th><th scope="col" class="num">会员营收（港元）</th><th scope="col" class="num">会员订单量</th><th scope="col" class="num">'+(storeMode()?'本店范围':'全期参考净 ROI')+'</th><th scope="col">结果可用性</th><th scope="col">操作</th>';
   const campaignTable=(items,label)=>items.length?'<div class="scroller"><table aria-label="'+label+'"><thead><tr>'+columns(label)+'</tr></thead><tbody>'+items.map(s=>{
-    const id=s.activity_id,a=activities[id],e=state(a);
+    const id=s.activity_id,a=activities[id],e=state(a),sales=metricsById.get(id);
     const entry=storeMode()?link(id,'overview','查看本店 →','entry'):
       role!=='ops'?link(id,'overview','查看复盘 →','entry'):
       !e.completeness?link(id,'evidence','查看待补数据 →','entry','quality'):
       load(id).finalized?link(id,'report','预览定稿 →','entry'):
       '<button class="entry linkbutton" data-action="edit-from" data-id="'+id+'">编辑复盘 →</button>';
     return '<tr data-row="'+id+'"'+(picked.has(id)?' class="selected"':'')+'>'+(role==='manager'?'<td class="checkcell"><input type="checkbox" data-pick="'+id+'" aria-label="选择 '+escape(s.name)+'" '+(picked.has(id)?'checked':picked.size>=3?'disabled':'')+'></td>':'')+
-      '<td>'+link(id,'overview',escape(s.name)+'<small>'+escape(s.type)+' · '+escape(s.owner)+'</small>','campaign')+'</td><td class="nowrap">'+(isLong(s)?'长期有效':date(s.end))+'</td><td class="nowrap">'+escape(s.status)+'</td><td class="num">'+(storeMode()?'已覆盖':numeric(e.roi)?ratio(e.roi):link(id,'evidence','暂不可估'))+'</td><td>'+badge(e)+'</td><td>'+entry+'</td></tr>';
+      '<td>'+link(id,'overview',escape(s.name)+'<small>'+escape(s.type)+' · '+escape(s.owner)+'</small>','campaign')+'</td><td class="nowrap">'+(isLong(s)?'长期有效':date(s.end))+'</td><td class="nowrap">'+escape(s.status)+'</td><td class="nowrap">'+sales.period+'</td><td class="num">'+hkd(sales.revenue)+'</td><td class="num">'+(sales.orders===null?'—':fmt(sales.orders))+'</td><td class="num">'+(storeMode()?'已覆盖':numeric(e.roi)?ratio(e.roi):link(id,'evidence','暂不可估'))+'</td><td>'+badge(e)+'</td><td>'+entry+'</td></tr>';
   }).join('')+'</tbody></table></div>':'<p class="campaign-empty muted">没有匹配活动。</p>';
   listing.innerHTML=
     '<details id="long-campaigns" class="campaign-group" '+(longOpen&&long.length?'open':'')+'><summary><strong>长期活动</strong><span class="tiny muted">'+long.length+' 场</span></summary>'+campaignTable(long,'长期活动')+'</details>'+
@@ -160,7 +270,7 @@ function detail(id,tab){
     ['本店覆盖','已覆盖',store],['本店会员营收',money(storeRow(a)?.revenue),'活动期会员交易'],['本店会员订单',numeric(storeRow(a)?.orders)?fmt(storeRow(a).orders):'无可用数据','活动期订单（单）']
   ]:[['净 ROI',ratio(e.roi),'盈亏线 '+fmt(rules.roi_breakeven,2)+' · 目标 '+fmt(target,2)],['参考净增量毛利',money(t.net?.net_gross_profit),'v6 校准表'],['交易日覆盖率',pct(a.data_quality.completeness),'报告闸门 ≥ 90%']];
   const tabs=[['overview','结果概览'],['evidence','归因证据'],['report','复盘报告']];
-  main.innerHTML='<a class="back tiny" href="#activities">← 返回活动目录</a><div class="pagehead"><div class="row"><h1>'+escape(s.name)+'</h1>'+badge(e)+'</div><p class="sub">'+activityPeriod(s)+' · '+(storeMode()?store:s.stores.length+' 家覆盖门店')+' · '+analysisPeriod(s,t)+'</p></div><div class="notice row spread"><strong>'+conclusion+'</strong>'+action+'</div><div class="metrics">'+stats.map(v=>metric(...v)).join('')+'</div><nav class="tabs no-print" aria-label="详情导航">'+tabs.map(([key,label])=>link(id,key,label,key===tab?'active':'')).join('')+'</nav>'+
+  main.innerHTML='<a class="back tiny" href="#summary/activity">← 返回按活动</a><div class="pagehead"><div class="row"><h1>'+escape(s.name)+'</h1>'+badge(e)+'</div><p class="sub">'+activityPeriod(s)+' · '+(storeMode()?store:s.stores.length+' 家覆盖门店')+' · '+analysisPeriod(s,t)+'</p></div><div class="notice row spread"><strong>'+conclusion+'</strong>'+action+'</div><div class="metrics">'+stats.map(v=>metric(...v)).join('')+'</div><nav class="tabs no-print" aria-label="详情导航">'+tabs.map(([key,label])=>link(id,key,label,key===tab?'active':'')).join('')+'</nav>'+
     (tab==='evidence'?evidence(a,e):tab==='report'?report(a,e):overview(a,e));
 }
 function overview(a,e){
@@ -248,20 +358,21 @@ function simulation(){
   table([['场景'],['预设增量','num'],['估计增量','num'],['95% 区间（港元）','num'],['误差','num'],['结论']],sim.runs.map(r=>[r.name,fmt(r.truth)+' 港元',fmt(r.estimate)+' 港元',r.ci.map(x=>fmt(x)).join(' 至 '),fmt(r.estimate-r.truth)+' 港元',r.passed?(r.ci[0]<=0&&r.ci[1]>=0?'未观察到显著效果':'观察到显著效果'):'仅供参考']))+'</section>'+
   '<section class="panel pad"><h2>项目阈值实测</h2>'+table([['场景'],['相关系数 ≥ 0.8','num'],['均值偏差 ≤ 15%','num'],['分层偏差 ≤ 2%','num'],['处理']],sim.runs.map(r=>[r.name,fmt(r.r,3),pct(r.mean),pct(r.strata),r.passed?'进入区间判断':'降级为仅供参考']))+
   '<p class="sub tiny">以上均为本页模拟的运行结果。趋势使用未归一化日毛利的 7 日滚动均值。</p></section>'+
-  '<details class="panel fold"><summary>六张表与生成约束</summary><p>每个场景用 14 家活动组和 7 家对照组门店，三个合成分层按 2∶1 配比。两组共享日期波动，活动期间每家活动组门店增加相同毛利，正增量与零增量用同一底表。失配场景将对照组的活动前波动反向，检验触发降级。</p>'+table([['表'],['每场景行数','num']],Object.entries(sim.tables).map(([name,count])=>[name,count]))+'<p class="sub tiny">可运行随附的 simulate.py 重新生成结果。</p></details><a class="button" href="#activities">返回活动目录 →</a>';
+  '<details class="panel fold"><summary>六张表与生成约束</summary><p>每个场景用 14 家活动组和 7 家对照组门店，三个合成分层按 2∶1 配比。两组共享日期波动，活动期间每家活动组门店增加相同毛利，正增量与零增量用同一底表。失配场景将对照组的活动前波动反向，检验触发降级。</p>'+table([['表'],['每场景行数','num']],Object.entries(sim.tables).map(([name,count])=>[name,count]))+'<p class="sub tiny">可运行随附的 simulate.py 重新生成结果。</p></details><a class="button" href="#summary/activity">返回营收总览 →</a>';
 }
 function render(){
   let [section,id,tab,anchor]=location.hash.slice(1).split('/');
-  section=section||'activities';
-  if(section==='activity'&&!visible().some(s=>s.activity_id===id)){location.hash='#activities';return}
-  const nav=section==='activity'?'activities':section;
+  if(section==='activities'){section='summary';id='activity'}
+  section=section||'summary';
+  if(section==='activity'&&!visible().some(s=>s.activity_id===id)){location.hash='#summary';return}
+  const nav=section==='activity'?'summary':section;
   document.querySelectorAll('[data-nav]').forEach(a=>{a.classList.toggle('active',a.dataset.nav===nav); if(a.dataset.nav===nav) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current')});
   if(nav==='methods'||nav==='simulation') document.querySelector('#helpNav').open=true;
   if(section==='activity') detail(id, ['overview','evidence','report'].includes(tab)?tab:'overview');
   else if(nav==='reports') reports();
   else if(nav==='methods') methods();
   else if(nav==='simulation') simulation();
-  else catalog();
+  else {summaryView=['day','store','activity'].includes(id)?id:'day';summary()}
   if(anchor) document.getElementById(anchor)?.scrollIntoView({block:'start'});
 }
 function showDialog(title,content){
@@ -277,12 +388,27 @@ function compare(){
 roleSelect.addEventListener('change',()=>{
   role=roleSelect.value;editing=false;picked.clear();
   filters={query:'',month:'',status:'',channel:'',owner:''};
-  if(location.hash==='#activities'||!location.hash) render();else location.hash='#activities';
+  summaryScope.store='';
+  if(!location.hash||location.hash.startsWith('#summary')||location.hash==='#activities')render();else location.hash='#summary';
 });
 window.addEventListener('hashchange',()=>{if(!location.hash.includes('/report')) editing=false;render();if(!matchMedia('(prefers-reduced-motion: reduce)').matches)main.animate?.([{opacity:.7},{opacity:1}],{duration:160});if(location.hash.split('/').length<4)window.scrollTo(0,0)});
 main.addEventListener('input',ev=>{if(ev.target.id==='query'){filters.query=ev.target.value;list()}});
 main.addEventListener('change',ev=>{
   const {id,dataset,checked,value}=ev.target;
+  if(dataset.scope){
+    if(dataset.scope==='store'||revenueData.dates.includes(value))summaryScope[dataset.scope]=value;
+    if(summaryScope.from>summaryScope.to)summaryScope[dataset.scope==='from'?'to':'from']=value;
+    summary();
+    main.querySelector('[data-scope="'+dataset.scope+'"]')?.focus();
+    return;
+  }
+  if(dataset.viewSetting){
+    const settings=viewSettings[summaryView];
+    if(dataset.viewSetting==='activitySort'){settings.sort=value;settings.direction=value==='name'?1:-1}
+    else settings[dataset.viewSetting]=value;
+    if(summaryView==='activity')list();else drawSummary();
+    return;
+  }
   if(['month','status','channel','owner'].includes(id)){filters[id]=value;list()}
   if(dataset.pick){
     if(checked&&picked.size<3)picked.add(dataset.pick);
@@ -300,6 +426,17 @@ main.addEventListener('click',ev=>{
   }
   const {action,id,index}=button.dataset;
   if(action==='compare')compare();
+  if(action==='summary-sort'){
+    const settings=viewSettings[summaryView], key=button.dataset.key;
+    settings.direction=settings.sort===key?-settings.direction:key==='name'?1:-1;
+    settings.sort=key;
+    drawSummary();
+    main.querySelector('[data-action="summary-sort"][data-key="'+key+'"]')?.focus();
+  }
+  if(action==='store-days'){
+    summaryScope.store=button.dataset.store;
+    location.hash='#summary/day';
+  }
   if(action==='reset'||action==='remove-filter'){
     const keys=action==='reset'?Object.keys(filters):[button.dataset.key];
     for(const key of keys){
