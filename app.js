@@ -7,7 +7,7 @@ const main = document.querySelector('main');
 const roleSelect = document.querySelector('#role');
 const dialog = document.querySelector('dialog');
 const picked = new Set();
-let role = 'manager', page = 1, editing = false;
+let role = 'manager', editing = false;
 let filters = {query:'', month:'', status:'', channel:'', owner:''};
 const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]);
 const numeric = n => Number.isFinite(n);
@@ -20,7 +20,10 @@ const url = (id,tab='overview',anchor='') => '#activity/'+id+'/'+tab+(anchor?'/'
 const storeMode = () => role === 'store';
 const ownRows = a => a.breakdown.dimensions.store?.rows || [];
 const storeRow = a => ownRows(a).find(r=>r.dimension_value===store);
-const ordered = [...summaries].sort((a,b) => (b.activity_id===heroId)-(a.activity_id===heroId) || b.end.localeCompare(a.end));
+const isLong = s => s.cadence === '常设';
+const activityPeriod = s => isLong(s) ? '长期有效' : date(s.start)+' 至 '+date(s.end);
+const analysisPeriod = (s,t) => '统计期间 '+escape(t.caliber?.campaign_window || date(s.start)+' 至 '+date(s.end));
+const ordered = [...summaries].sort((a,b) => b.end.localeCompare(a.end));
 const visible = () => ordered.filter(s => role==='manager' || (role==='ops' ? s.owner==='增长运营组' : s.stores.includes(store)));
 const state = a => {
   const t=a.attribution, p=t.parallel_trend, g=t.control_group, q=a.data_quality;
@@ -52,39 +55,56 @@ const load = id => {try{return JSON.parse(localStorage.getItem('pacific-review-'
 const save = (id,value) => {try{localStorage.setItem('pacific-review-'+id,JSON.stringify(value));return true}catch{return false}};
 const reportState = id => load(id).finalized ? '已定稿' : '草稿';
 function catalog() {
-  const rows=visible(), featured=rows.find(s=>s.activity_id===heroId) || rows[0], a=activities[featured.activity_id], e=state(a);
-  const stats=storeMode() ? [
-    ['本店覆盖活动',rows.length,store],['本店已复盘活动',rows.filter(s=>s.status==='已复盘').length,'按原型运行状态'],['本店进行中活动',rows.filter(s=>s.status==='进行中').length,'核对执行进度']
-  ] : role==='ops' ? [
-    ['我负责的活动',rows.length,'增长运营组'],['待补数据',rows.filter(s=>!state(activities[s.activity_id]).completeness).length,'完整度低于 90%'],['复盘草稿',rows.filter(s=>reportState(s.activity_id)==='草稿').length,'浏览器保存']
-  ] : [
-    ['全部活动',rows.length,'FY2026 模拟活动库'],['估计净 ROI ≥ 1.00',rows.filter(s=>numeric(state(activities[s.activity_id]).roi)&&state(activities[s.activity_id]).roi>=1).length,'含仅供参考结果'],['待核验证据',rows.filter(s=>state(activities[s.activity_id]).label!=='证据通过').length,'查看证据后再决策']
-  ];
-  main.innerHTML=head('活动目录',storeMode()?store+' · 本店覆盖活动':role==='ops'?'增长运营组 · 我负责的活动':'全部活动 · 查看活动表现与复盘证据')+
-  '<section class="feature"><div><div class="eyebrow">'+(storeMode()?'本店执行':'重点复盘')+'</div><h2>'+escape(featured.name)+'</h2><p>'+ (storeMode()?'核对本店发券与核销记录，记录执行差异。':'按 v6 回流假设估算，未达盈亏线。证据仅供参考。')+'</p><div class="row">'+link(featured.activity_id,storeMode()?'overview':'evidence',storeMode()?'查看执行要点 →':'查看对照组问题 →','button feature-action')+'</div></div><div class="signal"><small>'+ (storeMode()?'负责门店':'估计净 ROI')+'</small><div class="big">'+(storeMode()?store:ratio(e.roi))+'</div><div>'+(storeMode()?badge(e):'盈亏线 1.00 &nbsp; '+badge(e))+'</div></div></section>'+
-  '<section class="metrics" aria-label="岗位指标">'+stats.map(v=>metric(...v)).join('')+'</section>'+
-  '<section class="panel"><div class="table-head row spread"><h2>活动列表</h2><div id="selection" class="row"></div></div><div class="toolbar"><input id="query" type="search" aria-label="搜索活动名称" placeholder="⌕  搜索活动名称"><select id="month" aria-label="结束月份">'+options([...new Set(rows.map(s=>date(s.end).slice(0,7)))].sort().reverse(),'全部时间')+'</select><select id="status" aria-label="运行状态">'+options([...new Set(rows.map(s=>s.status))],'全部状态')+'</select><details><summary class="button">更多筛选 ⌄</summary><div class="filterpop"><label>渠道<select id="channel">'+options([...new Set(rows.flatMap(s=>s.channels))],'全部渠道')+'</select></label><label>负责人<select id="owner">'+options([...new Set(rows.map(s=>s.owner))],'全部负责人')+'</select></label></div></details><button data-action="reset">清除筛选</button></div><div id="listing"></div><div class="footline row spread tiny muted" id="pages"></div></section>';
+  const rows=visible();
+  const scope=storeMode()?escape(store)+' · 本店覆盖活动':role==='ops'?'增长运营组 · 我负责的活动':'FY2026 · 全部活动';
+  main.innerHTML=head('活动目录',scope)+
+  '<section class="panel catalog-panel" aria-label="活动检索与列表">'+
+    '<div class="toolbar" role="search" aria-label="检索活动">'+
+      '<input id="query" type="search" aria-label="搜索活动名称" placeholder="⌕  搜索活动名称">'+
+      '<select id="month" aria-label="结束月份">'+options([...new Set(rows.filter(s=>!isLong(s)).map(s=>date(s.end).slice(0,7)))].sort().reverse(),'全部时间')+'</select>'+
+      '<select id="status" aria-label="运行状态">'+options([...new Set(rows.map(s=>s.status))],'全部状态')+'</select>'+
+      '<details><summary class="button">更多筛选</summary><div class="filterpop">'+
+        '<label>渠道<select id="channel">'+options([...new Set(rows.flatMap(s=>s.channels))],'全部渠道')+'</select></label>'+
+        '<label>负责人<select id="owner">'+options([...new Set(rows.map(s=>s.owner))],'全部负责人')+'</select></label>'+
+      '</div></details>'+
+    '</div>'+
+    '<div class="table-head row spread"><div class="row"><strong id="result-count" aria-live="polite"></strong><div id="active-filters" class="row"></div></div><div id="selection" class="row"></div></div>'+
+    '<div id="listing"></div>'+
+  '</section>';
   for(const key of Object.keys(filters)) document.getElementById(key).value=filters[key];
   list();
 }
 function list(){
   const q=filters.query.trim().toLowerCase();
-  const rows=visible().filter(s=>s.name.toLowerCase().includes(q) && (!filters.month||s.end.startsWith(filters.month)) && (!filters.status||s.status===filters.status) && (!filters.channel||s.channels.includes(filters.channel)) && (!filters.owner||s.owner===filters.owner));
-  const size=8, pages=Math.max(1,Math.ceil(rows.length/size));
-  page=Math.min(pages,page);
-  const columns=(role==='manager'?'<th class="checkcell" scope="col"><span aria-label="选择对比活动">选</span></th>':'')+'<th scope="col">活动名称</th><th scope="col">结束时间</th><th scope="col">运行状态</th><th scope="col" class="num">'+(storeMode()?'本店范围':'参考净 ROI')+'</th><th scope="col">结果可用性</th><th scope="col">操作</th>';
-  document.querySelector('#listing').innerHTML='<div class="scroller"><table><thead><tr>'+columns+'</tr></thead><tbody>'+ (rows.length?rows.slice((page-1)*size,page*size).map(s=>{
+  const rows=visible().filter(s=>s.name.toLowerCase().includes(q) && (!filters.month||(!isLong(s)&&s.end.startsWith(filters.month))) && (!filters.status||s.status===filters.status) && (!filters.channel||s.channels.includes(filters.channel)) && (!filters.owner||s.owner===filters.owner));
+  document.querySelector('#result-count').textContent='共 '+rows.length+' 场活动';
+  const names={month:'结束月份',status:'运行状态',channel:'渠道',owner:'负责人'};
+  const chips=Object.entries(names).filter(([key])=>filters[key]).map(([key,label])=>
+    '<button class="filter-chip" data-action="remove-filter" data-key="'+key+'" aria-label="清除'+label+'">'+label+' '+escape(filters[key])+' ×</button>');
+  if(chips.length||q) chips.push('<button class="linkbutton" data-action="reset">清除筛选</button>');
+  document.querySelector('#active-filters').innerHTML=chips.join('');
+  const listing=document.querySelector('#listing');
+  const signature=JSON.stringify(filters);
+  const previous=listing.querySelector('#long-campaigns');
+  const longOpen=previous && listing.dataset.filters===signature ? previous.open : Boolean(chips.length||q);
+  listing.dataset.filters=signature;
+  const long=rows.filter(isLong);
+  const short=rows.filter(s=>!isLong(s));
+  const columns=label=>(role==='manager'?'<th class="checkcell" scope="col"><span aria-label="选择对比活动">选</span></th>':'')+'<th scope="col">活动名称</th><th scope="col">'+(label==='长期活动'?'有效期':'结束时间')+'</th><th scope="col">运行状态</th><th scope="col" class="num">'+(storeMode()?'本店范围':'参考净 ROI')+'</th><th scope="col">结果可用性</th><th scope="col">操作</th>';
+  const campaignTable=(items,label)=>items.length?'<div class="scroller"><table aria-label="'+label+'"><thead><tr>'+columns(label)+'</tr></thead><tbody>'+items.map(s=>{
     const id=s.activity_id,a=activities[id],e=state(a);
     const entry=storeMode()?link(id,'overview','查看本店 →','entry'):
       role!=='ops'?link(id,'overview','查看复盘 →','entry'):
       !e.completeness?link(id,'evidence','查看待补数据 →','entry','quality'):
       load(id).finalized?link(id,'report','预览定稿 →','entry'):
       '<button class="entry linkbutton" data-action="edit-from" data-id="'+id+'">编辑复盘 →</button>';
-    return '<tr data-row="'+id+'">'+(role==='manager'?'<td class="checkcell"><input type="checkbox" data-pick="'+id+'" aria-label="选择 '+escape(s.name)+'" '+(picked.has(id)?'checked':picked.size>=3?'disabled':'')+'></td>':'')+
-      '<td>'+link(id,'overview',escape(s.name)+'<small>'+escape(s.type)+' · '+escape(s.owner)+'</small>','campaign')+'</td><td class="nowrap">'+date(s.end)+'</td><td class="nowrap">'+escape(s.status)+'</td><td class="num">'+(storeMode()?'已覆盖':numeric(e.roi)?ratio(e.roi):link(id,'evidence','暂不可估'))+'</td><td>'+badge(e)+'</td><td>'+entry+'</td></tr>';
-  }).join(''):'<tr><td colspan="7">没有匹配活动。可调整搜索或筛选条件。</td></tr>')+'</tbody></table></div>';
+    return '<tr data-row="'+id+'"'+(picked.has(id)?' class="selected"':'')+'>'+(role==='manager'?'<td class="checkcell"><input type="checkbox" data-pick="'+id+'" aria-label="选择 '+escape(s.name)+'" '+(picked.has(id)?'checked':picked.size>=3?'disabled':'')+'></td>':'')+
+      '<td>'+link(id,'overview',escape(s.name)+'<small>'+escape(s.type)+' · '+escape(s.owner)+'</small>','campaign')+'</td><td class="nowrap">'+(isLong(s)?'长期有效':date(s.end))+'</td><td class="nowrap">'+escape(s.status)+'</td><td class="num">'+(storeMode()?'已覆盖':numeric(e.roi)?ratio(e.roi):link(id,'evidence','暂不可估'))+'</td><td>'+badge(e)+'</td><td>'+entry+'</td></tr>';
+  }).join('')+'</tbody></table></div>':'<p class="campaign-empty muted">没有匹配活动。</p>';
+  listing.innerHTML=
+    '<details id="long-campaigns" class="campaign-group" '+(longOpen&&long.length?'open':'')+'><summary><strong>长期活动</strong><span class="tiny muted">'+long.length+' 场</span></summary>'+campaignTable(long,'长期活动')+'</details>'+
+    '<section class="campaign-group" aria-labelledby="short-title"><header><h2 id="short-title">短期活动</h2><span class="tiny muted">'+short.length+' 场</span></header>'+campaignTable(short,'短期活动')+'</section>';
   document.querySelector('#selection').innerHTML=picked.size?'<span class="tiny muted">已选 '+picked.size+' / 3</span><button data-action="compare" '+(picked.size<2?'disabled':'')+'>对比活动</button>':'';
-  document.querySelector('#pages').innerHTML='<span>共 '+rows.length+' 场活动</span><div class="row"><button data-action="prev" '+(page===1?'disabled':'')+'>上一页</button><span>'+page+' / '+pages+'</span><button data-action="next" '+(page===pages?'disabled':'')+'>下一页</button></div>';
 }
 function chart(points,{heading,unit='港元',first='实际',second='对照估计',start,end,caption=''}){
   if(!points.length || !points.some(p=>numeric(p.actual))) return '<p class="muted">无可用趋势数据。</p>';
@@ -140,7 +160,7 @@ function detail(id,tab){
     ['本店覆盖','已覆盖',store],['本店会员营收',money(storeRow(a)?.revenue),'活动期会员交易'],['本店会员订单',numeric(storeRow(a)?.orders)?fmt(storeRow(a).orders):'无可用数据','活动期订单（单）']
   ]:[['净 ROI',ratio(e.roi),'盈亏线 '+fmt(rules.roi_breakeven,2)+' · 目标 '+fmt(target,2)],['参考净增量毛利',money(t.net?.net_gross_profit),'v6 校准表'],['交易日覆盖率',pct(a.data_quality.completeness),'报告闸门 ≥ 90%']];
   const tabs=[['overview','结果概览'],['evidence','归因证据'],['report','复盘报告']];
-  main.innerHTML='<a class="back tiny" href="#activities">← 返回活动目录</a><div class="pagehead"><div class="row"><h1>'+escape(s.name)+'</h1>'+badge(e)+'</div><p class="sub">'+date(s.start)+' 至 '+date(s.end)+' · '+(storeMode()?store:s.stores.length+' 家覆盖门店 · '+escape(t.caliber?.campaign_window||'活动期'))+'</p></div><div class="notice row spread"><strong>'+conclusion+'</strong>'+action+'</div><div class="metrics">'+stats.map(v=>metric(...v)).join('')+'</div><nav class="tabs no-print" aria-label="详情导航">'+tabs.map(([key,label])=>link(id,key,label,key===tab?'active':'')).join('')+'</nav>'+
+  main.innerHTML='<a class="back tiny" href="#activities">← 返回活动目录</a><div class="pagehead"><div class="row"><h1>'+escape(s.name)+'</h1>'+badge(e)+'</div><p class="sub">'+activityPeriod(s)+' · '+(storeMode()?store:s.stores.length+' 家覆盖门店')+' · '+analysisPeriod(s,t)+'</p></div><div class="notice row spread"><strong>'+conclusion+'</strong>'+action+'</div><div class="metrics">'+stats.map(v=>metric(...v)).join('')+'</div><nav class="tabs no-print" aria-label="详情导航">'+tabs.map(([key,label])=>link(id,key,label,key===tab?'active':'')).join('')+'</nav>'+
     (tab==='evidence'?evidence(a,e):tab==='report'?report(a,e):overview(a,e));
 }
 function overview(a,e){
@@ -163,7 +183,7 @@ function overview(a,e){
     ['触达与核销','送达率',pct(a.metrics.delivery),'累计送达、打开、点击 ÷ 触达记录'],
     ['触达与核销','核销率','无可用数据','缺少核销流水']];
 
-  return '<section class="panel pad" id="trend"><div class="row spread"><h2>日营收趋势</h2>'+badge(e)+'</div>'+chart(rows,{heading:'日营收趋势',start:date(s.start),end:date(s.end),caption:'图示 '+(rows[0]?.date||'—')+' 至 '+(rows.at(-1)?.date||'—')+'。'+(inCampaign.at(-1)?.date<date(s.end)?' 数据包仅提供活动期部分日序列，活动结束 '+date(s.end)+' 在图示范围外。':'')+(has?' 对照估计沿用原型口径。':' '+e.reason)})+'</section>'+
+  return '<section class="panel pad" id="trend"><div class="row spread"><h2>日营收趋势</h2>'+badge(e)+'</div>'+chart(rows,{heading:'日营收趋势',start:isLong(s)?null:date(s.start),end:isLong(s)?null:date(s.end),caption:'图示 '+(rows[0]?.date||'—')+' 至 '+(rows.at(-1)?.date||'—')+'。'+(!isLong(s)&&inCampaign.at(-1)?.date<date(s.end)?' 数据包仅提供活动期部分日序列，活动结束 '+date(s.end)+' 在图示范围外。':'')+(has?' 对照估计沿用原型口径。':' '+e.reason)})+'</section>'+
   '<div class="cols"><section class="panel pad" id="water"><div class="row spread"><h2>净增量毛利构成</h2>'+badge(e)+'</div>'+waterfall(a,e)+'</section><section class="panel pad" id="stores"><div class="row spread"><h2>门店类型对比</h2>'+badge(e)+'</div><p class="tiny muted">'+(e.label==='证据通过'?'按会员营收降序。':'门店差异待验证 · 按会员营收降序。')+'</p>'+(types.length?table([['门店类型'],['会员营收','num'],['会员订单','num']],types.map(r=>[escape(r.dimension_value),money(r.revenue),fmt(r.orders)])):'<p class="sub">无可用数据。</p>')+(dims.length?'<details class="fold"><summary>查看参与门店</summary>'+table([['门店'],['会员营收','num'],['会员订单','num']],dims.map((r,i)=>['<button data-action="store-detail" data-id="'+id+'" data-index="'+i+'">'+escape(r.dimension_value)+'</button>',money(r.revenue),fmt(r.orders)]))+'</details>':'')+'</section></div>'+
   '<section class="panel pad"><h2>次要指标</h2>'+table([['分组'],['指标'],['活动期数值','num'],['对比基准']],support.map(([group,label,value,base])=>[group,label,value,base]))+'<p class="tiny muted">统计期间 '+escape(t.caliber?.campaign_window||date(s.start)+' 至 '+date(s.end))+'</p></section>'+
   '<details class="panel fold"><summary>预算构成与活动档案</summary><p>计划 '+money(a.activity.budget?.planned)+' · 实际 '+money(amount)+'</p><p class="sub">v6 提供总投入，暂无核销让利和媒体费用拆分。</p><p class="sub">'+escape(a.activity.mechanism)+' · '+escape(s.owner)+'</p></details><details class="panel fold"><summary>详细口径</summary><p>'+escape(t.caliber?.formula||'仅描述性口径')+'</p><p class="sub">'+escape(t.net?.formula||'')+'</p></details>';
@@ -198,7 +218,7 @@ function report(a,e){
   const labels=['发生了什么','证据够不够','下一轮做什么'];
   const links=storeMode()?[['overview','查看本店执行','execution'],['evidence','查看本店证据',''],['overview','回到本店执行要点','execution']]:
     [['overview','查看净增量毛利图','water'],['evidence','查看对照组检查','checks'],['overview','查看门店类型对比','stores']];
-  return '<article class="report panel pad"><div class="row spread"><div class="row"><span class="sim">模拟数据</span>'+badge(e)+'</div><span class="tiny muted">'+(doc.finalized?'已定稿 · '+escape(doc.finalized):storeMode()?'本店摘要':'草稿')+'</span></div><h2 style="margin-top:10px">'+escape(s.name)+'｜复盘摘要</h2><p class="muted">'+date(s.start)+' 至 '+date(s.end)+' · '+(storeMode()?store:escape(s.owner))+'</p>'+
+  return '<article class="report panel pad"><div class="row spread"><div class="row"><span class="sim">模拟数据</span>'+badge(e)+'</div><span class="tiny muted">'+(doc.finalized?'已定稿 · '+escape(doc.finalized):storeMode()?'本店摘要':'草稿')+'</span></div><h2 style="margin-top:10px">'+escape(s.name)+'｜复盘摘要</h2><p class="muted">'+activityPeriod(s)+' · '+(storeMode()?store:escape(s.owner))+' · '+analysisPeriod(s,t)+'</p>'+
     (!e.completeness?'<div class="notice">'+e.reason+' 当前可预览草稿。</div>':'')+
     fields.map((value,i)=>'<section><h3>'+labels[i]+'</h3>'+(editing&&canEdit?'<textarea maxlength="450" aria-label="'+labels[i]+'">'+escape(value)+'</textarea>':'<p style="white-space:pre-wrap">'+escape(value)+'</p>')+link(id,links[i][0],links[i][1]+' →','source-link',links[i][2])+'</section>').join('')+
     '<footer>数据来源 '+escape(meta.source)+' · 原型归档 '+escape(meta.version)+' · 数据截至 '+escape(a.data_quality.cutoff_time)+'<br>证据状态 '+e.label+' · '+escape(a.report.caliber_version||'模拟活动库')+'</footer>'+
@@ -255,15 +275,15 @@ function compare(){
   showDialog('活动对比',table([['指标'],...acts.map(a=>[escape(a.activity_summary.name),'num'])],rows.map(([label,f])=>[label,...acts.map(f)]))+'<p class="sub tiny">预算决策前先检查各活动的证据状态。</p>');
 }
 roleSelect.addEventListener('change',()=>{
-  role=roleSelect.value;page=1;editing=false;picked.clear();
+  role=roleSelect.value;editing=false;picked.clear();
   filters={query:'',month:'',status:'',channel:'',owner:''};
   if(location.hash==='#activities'||!location.hash) render();else location.hash='#activities';
 });
-window.addEventListener('hashchange',()=>{if(!location.hash.includes('/report')) editing=false;render();if(location.hash.split('/').length<4)window.scrollTo(0,0)});
-main.addEventListener('input',ev=>{if(ev.target.id==='query'){filters.query=ev.target.value;page=1;list()}});
+window.addEventListener('hashchange',()=>{if(!location.hash.includes('/report')) editing=false;render();if(!matchMedia('(prefers-reduced-motion: reduce)').matches)main.animate?.([{opacity:.7},{opacity:1}],{duration:160});if(location.hash.split('/').length<4)window.scrollTo(0,0)});
+main.addEventListener('input',ev=>{if(ev.target.id==='query'){filters.query=ev.target.value;list()}});
 main.addEventListener('change',ev=>{
   const {id,dataset,checked,value}=ev.target;
-  if(['month','status','channel','owner'].includes(id)){filters[id]=value;page=1;list()}
+  if(['month','status','channel','owner'].includes(id)){filters[id]=value;list()}
   if(dataset.pick){
     if(checked&&picked.size<3)picked.add(dataset.pick);
     if(!checked)picked.delete(dataset.pick);
@@ -280,8 +300,15 @@ main.addEventListener('click',ev=>{
   }
   const {action,id,index}=button.dataset;
   if(action==='compare')compare();
-  if(action==='prev'||action==='next'){page+=action==='prev'?-1:1;list();document.querySelector('.table-head').scrollIntoView({block:'nearest'})}
-  if(action==='reset'){filters={query:'',month:'',status:'',channel:'',owner:''};page=1;catalog()}
+  if(action==='reset'||action==='remove-filter'){
+    const keys=action==='reset'?Object.keys(filters):[button.dataset.key];
+    for(const key of keys){
+      filters[key]='';
+      document.getElementById(key).value='';
+    }
+    list();
+    document.getElementById('query').focus();
+  }
   if(action==='edit'){editing=true;render();main.querySelector('textarea')?.focus()}
   if(action==='edit-from'){editing=!load(id).finalized;location.hash=url(id,'report')}
   if(action==='cancel'){editing=false;render()}
