@@ -55,12 +55,31 @@ const load = id => {try{return JSON.parse(localStorage.getItem('pacific-review-'
 const save = (id,value) => {try{localStorage.setItem('pacific-review-'+id,JSON.stringify(value));return true}catch{return false}};
 const reportState = id => load(id).finalized ? '已定稿' : '草稿';
 const revenueData=window.MOCK.revenue_summary;
-const summaryScope={from:revenueData.dates[0],to:revenueData.dates.at(-1),store:''};
+const summaryScope={from:revenueData.dates.at(-15),to:revenueData.dates.at(-1),store:''};
 const viewSettings=Object.fromEntries(['day','store','activity'].map(view=>[view,{sort:view==='day'?'name':'revenue',direction:-1,minRevenue:'',minOrders:'',type:'',metric:'revenue'}]));
 let summaryView='day';
 let summaryRows=[];
 const hkd=n=>numeric(n)?fmt(n/100,2):'—';
 function availableStores(){return revenueData.stores.filter(s=>!storeMode()||s.name===store)}
+const estimatedSpend=revenueData.dates.map(day=>{
+  let total=0;
+  let known=false;
+  for(const a of Object.values(activities)){
+    const s=a.activity_summary,amount=a.attribution.net?.total_investment;
+    if(!numeric(amount)||day<date(s.start)||day>date(s.end))continue;
+    const offset=Math.round((Date.parse(day)-Date.parse(date(s.start)))/86400000);
+    const duration=Math.round((Date.parse(date(s.end))-Date.parse(date(s.start)))/86400000)+1;
+    const cents=Math.round(amount*100);
+    total+=Math.round(cents*(offset+1)/duration)-Math.round(cents*offset/duration);
+    known=true;
+  }
+  return known?total:null;
+});
+function comparison(current,previous,period){
+  if(!numeric(current)||!numeric(previous)||previous===0)return '环比 — · '+period;
+  const change=(current-previous)/previous*100;
+  return '环比 '+(change>0?'↑ +':change<0?'↓ ':'')+fmt(change,1)+'% · '+period;
+}
 function summary(){
   const dates=revenueData.dates;
   const from=dates.indexOf(summaryScope.from),to=dates.indexOf(summaryScope.to);
@@ -82,14 +101,40 @@ function summary(){
   const recorded=days.filter(d=>d.orders!==null).length;
   const controls='<div class="toolbar summary-scope"><label>开始日期 <input type="date" data-scope="from" value="'+summaryScope.from+'" min="'+dates[0]+'" max="'+summaryScope.to+'"></label><label>结束日期 <input type="date" data-scope="to" value="'+summaryScope.to+'" min="'+summaryScope.from+'" max="'+dates.at(-1)+'"></label>'+
     (storeMode()?'<span>'+escape(store)+'</span>':'<label>门店 <select data-scope="store">'+options(allowed.map(s=>s.name),'全部门店')+'</select></label>')+'</div>';
-  main.innerHTML=head('营收总览','会员交易 · FY2026 模拟数据')+
+  const titles={overview:'营收总览',day:'按日',store:'按门店',activity:'按活动'};
+  const overview=summaryView==='overview';
+  const costAvailable=!selected;
+  const costs=estimatedSpend.slice(from,to+1);
+  const costTotal=costAvailable&&costs.some(numeric)?costs.reduce((sum,n)=>sum+(n??0),0):null;
+  const prevStart=from-days.length;
+  const priorPeriod=prevStart>=0?dates[prevStart]+' 至 '+dates[from-1]:'上一等长区间超出数据范围';
+  let priorRevenue=null;
+  if(prevStart>=0){
+    for(const shop of included)for(const [d,revenue] of shop.days){
+      if(d>=prevStart&&d<from)priorRevenue=(priorRevenue??0)+revenue;
+    }
+  }
+  const priorCosts=prevStart>=0&&costAvailable?estimatedSpend.slice(prevStart,from):[];
+  const priorSpend=priorCosts.some(numeric)?priorCosts.reduce((sum,n)=>sum+(n??0),0):null;
+  main.innerHTML=head(titles[summaryView],'会员交易 · FY2026 模拟数据')+
     '<section class="panel">'+controls+'</section><section class="metrics">'+
-    metric('会员总营收（港元）',recorded?hkd(total):'—',escape(selected||'全部门店'))+
-    metric('会员订单量',recorded?fmt(orderTotal):'—','单')+
+    metric('会员总营收（港元）',recorded?hkd(total):'—',overview?comparison(recorded?total:null,priorRevenue,priorPeriod):escape(selected||'全部门店'))+
+    (overview?metric('估算活动总支出（港元）',hkd(costTotal),costAvailable?comparison(costTotal,priorSpend,priorPeriod):'源表仅提供活动总投入，门店支出无可用数据'):
+      metric('会员订单量',recorded?fmt(orderTotal):'—','单'))+
     metric('有交易记录的天数',recorded+' / '+days.length,'所选范围内')+'</section>'+
-    '<nav class="tabs" aria-label="营收查看方式">'+[['day','按日'],['store','按门店'],['activity','按活动']].map(([key,label])=>'<a href="#summary/'+key+'" '+(key===summaryView?'class="active" aria-current="page"':'')+'>'+label+'</a>').join('')+'</nav><div id="summary-content"></div>';
+    '<div id="summary-content"></div>';
   const shopSelect=main.querySelector('[data-scope="store"]');
   if(shopSelect)shopSelect.value=summaryScope.store;
+  if(overview){
+    const content=document.querySelector('#summary-content');
+    const points=days.map((d,i)=>({date:d.name,actual:numeric(d.revenue)?d.revenue/100:null,
+      baseline:costAvailable&&numeric(costs[i])?costs[i]/100:null}));
+    content.innerHTML='<section class="panel pad"><h2>每日营收与活动支出</h2>'+
+      chart(points,{heading:'每日营收与活动支出',first:'会员营收',second:'估算活动支出',caption:
+        '营业收入按有记录日汇总，无记录日留空。'+(costAvailable?'活动支出按 Excel 已知活动总投入及统计窗口逐日均摊，仅覆盖可分摊投入。':'门店范围内暂无支出明细。')+
+        ' 环比对照紧邻的上一等长区间。'})+'</section>';
+    return;
+  }
   const rangeTotal=(shop,lo=from,hi=to)=>shop.days.reduce((value,[d,revenue,orders])=>{
     if(d>=lo&&d<=hi){value.revenue=(value.revenue??0)+revenue;value.orders=(value.orders??0)+orders}
     return value;
@@ -217,7 +262,7 @@ function list(){
   document.querySelector('#selection').innerHTML=picked.size?'<span class="tiny muted">已选 '+picked.size+' / 3</span><button data-action="compare" '+(picked.size<2?'disabled':'')+'>对比活动</button>':'';
 }
 function chart(points,{heading,unit='港元',first='实际',second='对照估计',start,end,caption=''}){
-  if(!points.length || !points.some(p=>numeric(p.actual))) return '<p class="muted">无可用趋势数据。</p>';
+  if(!points.length || !points.some(p=>numeric(p.actual)||numeric(p.baseline))) return '<p class="muted">无可用趋势数据。</p>';
   const has=points.some(p=>numeric(p.baseline));
   const all=points.flatMap(p=>[p.actual,p.baseline]).filter(numeric), w=800,h=242, sx=70,ex=775,sy=32,ey=192;
   const axis=v=>unit==='港元' && Math.abs(v)>=1000 ? fmt(v/1000,1)+'k' : fmt(v,unit==='指数'&&Math.abs(v)<2?2:0);
@@ -365,14 +410,14 @@ function render(){
   if(section==='activities'){section='summary';id='activity'}
   section=section||'summary';
   if(section==='activity'&&!visible().some(s=>s.activity_id===id)){location.hash='#summary';return}
-  const nav=section==='activity'?'summary':section;
+  const nav=section==='activity'?'summary-activity':section==='summary'&&['day','store','activity'].includes(id)?'summary-'+id:section;
   document.querySelectorAll('[data-nav]').forEach(a=>{a.classList.toggle('active',a.dataset.nav===nav); if(a.dataset.nav===nav) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current')});
   if(nav==='methods'||nav==='simulation') document.querySelector('#helpNav').open=true;
   if(section==='activity') detail(id, ['overview','evidence','report'].includes(tab)?tab:'overview');
   else if(nav==='reports') reports();
   else if(nav==='methods') methods();
   else if(nav==='simulation') simulation();
-  else {summaryView=['day','store','activity'].includes(id)?id:'day';summary()}
+  else {summaryView=['day','store','activity'].includes(id)?id:'overview';summary()}
   if(anchor) document.getElementById(anchor)?.scrollIntoView({block:'start'});
 }
 function showDialog(title,content){

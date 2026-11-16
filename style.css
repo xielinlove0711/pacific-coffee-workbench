@@ -50,3 +50,6 @@ button:enabled:active,.button:active,summary:active,.entry:active{filter:brightn
 .summary-table thead th{position:sticky;top:0;z-index:1}
 .summary-table th button{color:inherit;font-weight:inherit}
 .summary-table th button:hover{color:var(--deep-red)}
+.sidebar .summary-nav{margin:0 0 8px 19px;padding-left:7px;border-left:1px solid var(--line)}
+.sidebar .summary-nav a{display:block;color:var(--ink);padding:7px 12px;margin:2px 0;border-radius:6px;font-size:13px;text-decoration:none}
+.sidebar .summary-nav a.active{color:var(--deep-red)}
