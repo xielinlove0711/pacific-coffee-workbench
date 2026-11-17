@@ -225,6 +225,7 @@ function summary(){
   const costAvailable=dailySpendAvailable();
   const costs=estimatedSpend.slice(from,to+1);
   const costTotal=costAvailable&&costs.some(numeric)?costs.reduce((sum,n)=>sum+(n??0),0):null;
+  const registrations=revenueData.daily_registrations.slice(from,to+1).reduce((sum,n)=>sum+n,0);
   const prevStart=from-days.length;
   const priorPeriod=prevStart>=0?dates[prevStart]+' 至 '+dates[from-1]:'上一等长区间超出数据范围';
   let priorRevenue=null;
@@ -240,6 +241,8 @@ function summary(){
     '<section class="panel">'+controls+'</section><section class="metrics">'+
     metric('会员总营收（港元）',recorded?hkd(total):'—',overview?comparison(recorded?total:null,priorRevenue,priorPeriod):escape(selected||'全部门店'))+
     metric('会员订单量',recorded?fmt(orderTotal):'—','单')+
+    (overview?metric('会员总数（全网）',fmt(revenueData.member_count),'客户主数据')+
+      metric('同期新增注册（全网）',fmt(registrations),'日期筛选范围内'):'')+
     metric('会员客单价（港元）',orderTotal?hkd(total/orderTotal):'—','营收 ÷ 订单')+
     (overview?metric('交叠期间的活动',fmt(scopedActivities().length),'当前活动筛选范围')+metric('活动触达投入（港元）',hkd(costTotal),costAvailable?comparison(costTotal,priorSpend,priorPeriod):'源表提供全网日投入'):'')+
     metric('有交易记录的天数',recorded+' / '+days.length,'所选范围内')+'</section>'+

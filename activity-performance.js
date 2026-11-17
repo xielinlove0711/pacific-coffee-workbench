@@ -1,6 +1,18 @@
 'use strict';
 
 function performanceIndicators(activity) {
+  const rows=goalPerformanceIndicators(activity);
+  const {reported_new_members,new_members_reached,first_orders_7d}=activity.performance||{};
+  if(numeric(reported_new_members))rows.push(['窗口内新会员（活动主表）',fmt(reported_new_members),'取自 v7 (5) 活动主表。']);
+  if(numeric(new_members_reached))rows.push(
+    ['触达新会员',fmt(new_members_reached),'取自 v7 (5) 活动预算与效果校准表的新会员触达转化记录。'],
+    ['触后 7 天首单',fmt(first_orders_7d),'按工作簿记录，触达后 7 天内首次下单的新会员数。'],
+    ['触后 7 天首单转化率',new_members_reached>0?pct(first_orders_7d/new_members_reached*100):'—','触后 7 天首单人数 ÷ 触达新会员人数。']
+  );
+  return rows;
+}
+
+function goalPerformanceIndicators(activity) {
   const {buyers,new_buyers,buyers_with_signup,signups,repeat_buyers,dormant_returners}=activity.performance||{};
   const {orders}=activity.metrics;
   const share=(n,d)=>d>0&&numeric(n)?pct(n/d*100):'—';

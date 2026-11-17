@@ -23,7 +23,7 @@ function summaryExportSheets(){
   const titles={overview:'数据总览',day:'按日',store:'按门店',activity:'按活动'};
   const view=viewSettings[summaryView];
   const scopeRows=[
-    ['页面',titles[summaryView]],['数据来源','太平洋咖啡 FY2026 v7 (3) 模拟工作簿'],
+    ['页面',titles[summaryView]],['数据来源','太平洋咖啡 FY2026 v7 (5) 模拟工作簿'],
     ['开始日期',summaryScope.from],['结束日期',summaryScope.to],
     ['区域',summaryScope.district||'全部'],['门店',summaryScope.store||'全部'],
     ['交易渠道',summaryScope.channel||'全部'],['活动类型',summaryScope.type||'全部'],

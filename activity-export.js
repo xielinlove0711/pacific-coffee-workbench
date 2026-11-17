@@ -64,7 +64,7 @@ function activityExportSheets(activity,crossOnly){
   const sheets=[['筛选与口径',['项目','内容'],[
     ['活动',s.name],['编号',s.activity_id],['活动类型',s.type],['活动目标',s.goal],['覆盖门店',s.stores.length],
     ['档期',s.start+' 至 '+s.end+(invalidWindow(s)?'（日期倒挂）':'')],
-    ['数据来源','FY2026 v7 (3) 模拟工作簿'],['交叉维度',dimensions.join(' × ')||'未选择'],
+    ['数据来源','FY2026 v7 (5) 模拟工作簿'],['交叉维度',dimensions.join(' × ')||'未选择'],
     ['营收与订单','活动期覆盖门店的会员交易。各交叉组按其维度组合汇总，未记录交易的组合不列出。'],
     ['客单价与营收占比','客单价＝会员营收 ÷ 会员订单量；营收占比＝分组营收 ÷ 全活动覆盖门店会员营收。'],
     ['ROI（校准）',economicsHeaders.roi.help],['送达 CPM',economicsHeaders.cpm.help],
