@@ -187,3 +187,24 @@ button:focus-visible,.compact-action:focus-visible{outline-offset:3px}
 .login-card select{width:100%;padding:8px 10px;border-color:#cfbfb8}
 html[lang="en"] .sidebar .nav-parent>a,html[lang="en"] .sidebar nav>a{gap:7px;padding-inline:7px}
 html[lang="en"] .summary-scope label,html[lang="en"] .performance-filters label{min-width:0}
+.did-guide details+details{margin-top:12px}
+.did-guide summary{font-weight:600;color:var(--deep-red)}
+.did-selected{margin-block:12px;padding:12px;border-radius:8px;background:var(--bg)}
+.did-question{display:inline-grid;place-items:center;width:15px;height:15px;margin-left:6px;border:1px solid #bda69c;border-radius:50%;color:var(--coffee-line);font-size:11px;line-height:1;cursor:help;vertical-align:middle}
+.method-choice:has(.did-question):hover .did-question{border-color:var(--red);color:var(--red)}
+[data-analysis="activity"] option:disabled{color:#aaa;background:#f4f1ee}
+.comparison-findings{padding:12px 15px;border-radius:8px;background:var(--bg);margin-block:14px}
+.comparison-findings h4,.comparison-mini h4{margin:0 0 8px;font-size:14px}
+.comparison-findings ul{margin:0;padding-left:18px}
+.comparison-findings li+li{margin-top:6px}
+.comparison-bars{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));gap:18px;margin-block:18px}
+.comparison-mini{min-width:0}
+@media print{.comparison-bars{display:block}.comparison-mini{break-inside:avoid}}
+.downloadable-chart{position:relative;padding-top:20px}
+.chart-download{position:absolute;right:2px;top:0;display:grid;place-items:center;width:28px;height:28px;padding:0;border:0;background:transparent;color:var(--coffee-line);line-height:1}
+.chart-download:hover{color:var(--deep-red);background:transparent}
+
+.chart-download-icon{position:relative;display:block;width:18px;height:19px}
+.chart-download-icon::before{content:"";position:absolute;left:8px;top:1px;height:10px;width:2px;background:currentColor;border-radius:1px}
+.chart-download-icon::after{content:"";position:absolute;left:5px;top:6px;width:6px;height:6px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg)}
+.chart-download-icon>span{position:absolute;left:1px;right:1px;bottom:1px;height:5px;border:2px solid currentColor;border-top:0;border-radius:0 0 2px 2px}

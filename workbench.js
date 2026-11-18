@@ -190,16 +190,26 @@ function renderAnalysis(id) {
   }
   f.periodMonth ||= summaryScope.to.slice(0,7);
   f.referenceMonth ||= f.periodMonth;
+  if(f.method==='did'&&f.activity&&!didReadiness(activities[f.activity].activity_summary).holdout){
+    f.activity='';
+    lastResult=undefined;
+  }
   const chosen=activities[f.activity]?.activity_summary;
   const peers=allowed.filter(a=>a.activity_id!==f.activity&&(f.method!=='peer'||(chosen&&a.type===chosen.type)));
   if(f.method==='peer'&&!peers.some(a=>a.activity_id===f.peer))f.peer='';
-  const activityOptions=items=>items.map(a=>'<option value="'+a.activity_id+'">'+escape(a.name)+'</option>').join('');
+  const activityOptions=items=>items.map(a=>{
+    const readiness=f.method==='did'?didReadiness(a):null;
+    const disabled=readiness&&!readiness.holdout;
+    const prefix=readiness?(disabled?'[未进行 Holdout · 不可选] ':'[Holdout · '+readiness.label+'] '):'';
+    return '<option value="'+a.activity_id+'"'+(disabled?' disabled':'')+'>'+escape(prefix+a.name)+'</option>';
+  }).join('');
   const isDid=f.method==='did';
   const pairMode=f.method==='peer'||f.method==='general';
   main.innerHTML=head('对比分析','选择基准和指标。每次运行可单独保存到报告。')+
     '<div class="method-grid">'+Object.entries(methodsList).map(([key,label])=>
-      '<button class="panel method-choice '+(key===f.method?'active':'')+'" data-work="method" data-value="'+key+'" aria-pressed="'+(key===f.method)+'"><strong>'+label+'</strong><small>'+
+      '<button class="panel method-choice '+(key===f.method?'active':'')+'" data-work="method" data-value="'+key+'" aria-pressed="'+(key===f.method)+'"><strong>'+label+(key==='did'?'<span class="did-question" data-metric-help="'+escape('DID（双重差分）用处理组活动前后的变化，减去对照组同期的变化，估计活动差异。本页仅允许选择有 Holdout 设计记录的活动。Holdout 是投放前预先留出的对照人群；还需保存分组名单及两组前后交易，并复核平行趋势和同期活动。有设计记录但缺少明细时需补数据才能运行。')+'" aria-hidden="true">?</span>':'')+'</strong><small>'+
       {period:'跨年同月或同年同期的活动对比',general:'任选两场非常设活动',peer:'按活动开始后的相同天数比较',did:'查看前趋势与前后双差'}[key]+'</small></button>').join('')+'</div>'+
+    (isDid?didGuidePanel(chosen):'')+
     '<section class="panel toolbar work-fields">'+
     (f.method==='period'?periodFields(f,activityOptions):
     '<label>活动 <select data-analysis="activity"><option value="">请选择活动</option>'+activityOptions(allowed)+'</select></label>'+
@@ -269,7 +279,12 @@ function calculate(onlyPre) {
   const take=(group,days,normalize)=>sample(group,days,f.metric,f.channel,normalize);
   const result={title:methodsList[f.method],source:'FY2026 v7 · '+(f.channel||'全部交易渠道'),unit,method:f.method};
   let days, first, second;
-  if(f.method!=='period'&&!groupA.length)throw Error('所选范围没有可用门店。');
+  if(f.method==='did'&&a){
+    const eligibility=didReadiness(a);
+    if(!eligibility.holdout)throw Error('该活动未进行 Holdout，无法选择。下次投放前设置随机留出组，冻结分组名单并保留两组前后交易。');
+    if(!eligibility.ready)throw Error(eligibility.issues.map(([issue,action])=>issue+'。'+action).join(' '));
+  }
+  if(!['period','peer'].includes(f.method)&&!groupA.length)throw Error('所选范围没有可用门店。');
   if(f.method==='period'){
     const {periodMonth,referenceMonth}=f;
     if(!coveredMonth(periodMonth)||!coveredMonth(referenceMonth)){
@@ -303,6 +318,7 @@ function calculate(onlyPre) {
     result.delta=avg(current)-avg(reference);
     result.baseline=avg(reference);
     result.diagnostics=[['当前活动日均值',avg(current)],['基准活动日均值',avg(reference)]];
+    enrichComparison(result,a,b,groupA,groupB,currentDays,referenceDays);
     comparisonEconomics(result,a,groupA,currentDays.length);
     result.note='各自按所选月份内的实际活动天数和参与门店标准化。趋势按月内日号对齐。结果反映参与门店的会员交易差异，可能受同期活动及门店结构影响。';
   }else if(f.method==='peer'||f.method==='general'){
@@ -312,6 +328,30 @@ function calculate(onlyPre) {
     if(!sameType&&invalidWindow(b))throw Error('对比活动日期倒挂，请先修正活动日期。');
     const groupB=shops(b.stores);
     const allA=dateRange(a.start,a.end), allB=dateRange(b.start,b.end);
+    if(sameType){
+      const overlap=groupA.filter(shop=>groupB.some(other=>other.name===shop.name)).length;
+      result.warnings=[
+        '活动期间：'+a.name+'（'+a.start+' 至 '+a.end+'）；'+b.name+'（'+b.start+' 至 '+b.end+'）。',
+        '当前筛选内门店：'+groupA.length+' / '+groupB.length+' 家，共同门店 '+overlap+' 家。'
+      ];
+      if(a.start!==b.start||a.end!==b.end)result.warnings.push('活动期间不同，季节、节假日及观察天数可能影响结果。');
+      if(groupA.length!==overlap||groupB.length!==overlap)result.warnings.push('门店范围不同，店型和地区结构可能影响结果。');
+      result.warnings.push('按各自活动第几天对齐，使用每店每日指标比较。');
+      if(!allA.length||!allB.length||!groupA.length||!groupB.length){
+        const series=(group,range)=>group.length&&range.length?take(group,range,true):[];
+        const valuesA=series(groupA,allA),valuesB=series(groupB,allB);
+        result.labels=['当前活动','同类活动'];
+        result.detail=a.name+' 对比 '+b.name;
+        result.unit=unit+'/店日';
+        result.points=Array.from({length:Math.max(valuesA.length,valuesB.length)},(_,i)=>({
+          date:allA[i]||allB[i],label:'第 '+(i+1)+' 天',actual:valuesA[i]??null,baseline:valuesB[i]??null
+        }));
+        result.summary='部分活动缺少有效日期或当前筛选内门店，仅展示可用一方的趋势。差额、变化率和 ROI 暂缺。';
+        result.warnings.push('请核对活动日期和门店映射，或放宽门店／区域筛选；补齐前无法计算双边差异。');
+        result.note=result.warnings.join(' ');
+        return result;
+      }
+    }
     if(!allA.length||!allB.length||!groupB.length)throw Error('活动日期或门店范围内没有可比较数据。');
     if(!sameType){
       const valuesA=take(groupA,allA,true),valuesB=take(groupB,allB,true);
@@ -325,6 +365,7 @@ function calculate(onlyPre) {
       result.baseline=avg(valuesB);
       result.unit=unit+'/店日';
       result.diagnostics=[['当前活动每店每日均值',avg(valuesA)],['对比活动每店每日均值',avg(valuesB)]];
+      enrichComparison(result,a,b,groupA,groupB,allA,allB);
       comparisonEconomics(result,a,groupA,allA.length);
       result.note='各自按工作簿覆盖的活动期和参与门店计算。趋势按活动第几天对齐，较短档期结束后留空。观察差异可能受门店结构、季节及同期活动影响。';
       return result;
@@ -337,6 +378,7 @@ function calculate(onlyPre) {
     result.delta=avg(first)-avg(second);
     result.baseline=avg(second);
     result.unit=unit+'/店日';
+    enrichComparison(result,a,b,groupA,groupB,days,allB.slice(0,length));
     comparisonEconomics(result,a,groupA,length);
     result.note='按参与门店与共同天数标准化。数据为对应门店的会员交易，含其他同期活动影响。';
   }else{
@@ -389,16 +431,18 @@ function resultSummary(r) {
 
 function evidenceHTML(r) {
   return '<article class="panel pad evidence-card"><h3>'+escape(r.title)+'</h3><p class="sub">'+escape(r.detail)+' · '+escape(r.source)+'</p>'+
-    '<p><strong>'+escape(resultSummary(r))+'</strong></p>'+
-    (r.diagnostics?table([['指标'],[['did','period','general'].includes(r.method)?escape(r.unit):'数值','num']],r.diagnostics.map(([label,value])=>[escape(label),fmt(value,2)])):'')+
     (r.points.length?chart(r.points,{heading:escape(r.title),unit:escape(r.unit),first:r.labels[0],second:r.labels[1]||'',start:r.start}):'')+
+    (r.warnings?.length?'<details class="fold"><summary>活动期间与门店范围提示</summary><ul>'+r.warnings.map(text=>'<li>'+escape(text)+'</li>').join('')+'</ul></details>':'')+
+    comparisonReportHTML(r)+
+    (r.comparison?'<details class="fold"><summary>主指标差异与计算口径</summary><p>'+escape(resultSummary(r))+'</p></details>':'<p><strong>'+escape(resultSummary(r))+'</strong></p>')+
+    (!r.comparison&&r.diagnostics?table([['指标'],[['did','period','general'].includes(r.method)?escape(r.unit):'数值','num']],r.diagnostics.map(([label,value])=>[escape(label),fmt(value,2)])):'')+
     '<p class="sub">'+escape(r.note)+'</p>'+
     (economicsText(r)?'<div class="notice">'+escape(economicsText(r))+'</div>':'')+'</article>';
 }
 
 function showResult() {
   const output=main.querySelector('#analysis-output');
-  if(lastResult) output.innerHTML=evidenceHTML(lastResult)+'<div class="row toolbar"><button data-work="save-run">保存结果</button><button data-work="send-run">加入报告</button></div>';
+  if(lastResult) output.innerHTML=evidenceHTML(lastResult)+'<div class="row toolbar"><button data-work="save-run">保存结果</button><button data-work="send-run">将结论和图表加入报告</button></div>';
   main.querySelector('#run-list').innerHTML=currentRuns.length?currentRuns.map((r,i)=>'<div class="row run-row"><span>'+escape(r.title+' · '+r.detail)+'</span><button data-work="view-run" data-value="'+i+'">打开</button></div>').join(''):'<p class="sub">运行比较后可保存到当前浏览器。</p>';
 }
 
@@ -467,7 +511,7 @@ function renderWorkspace(preview=false) {
 }
 
 function draftEvidenceText() {
-  return workspaceDraft().evidence.map(r=>r.title+'｜'+r.detail+'\n'+resultSummary(r)+'\n'+r.note+'\n'+economicsText(r)).join('\n\n');
+  return workspaceDraft().evidence.map(r=>r.title+'｜'+r.detail+'\n'+comparisonConclusionText(r)+'\n'+resultSummary(r)+'\n'+r.note+'\n'+economicsText(r)).join('\n\n');
 }
 
 async function suggest(useAI) {
@@ -570,7 +614,7 @@ function downloadWord(draft) {
       figure=image(id,result.title);
     }
     return paragraph(result.title,true)+paragraph(result.detail+' · '+result.source)+
-      paragraph(resultSummary(result))+figure+paragraph(result.note)+(economicsText(result)?paragraph(economicsText(result)):'');
+      paragraph(comparisonConclusionText(result))+paragraph(resultSummary(result))+figure+paragraph(result.note)+(economicsText(result)?paragraph(economicsText(result)):'');
   }).join('');
   files['word/_rels/document.xml.rels']=xmlHeader+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+relations.join('')+'</Relationships>';
   files['word/document.xml']=xmlHeader+'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '+
@@ -648,7 +692,11 @@ document.addEventListener('click',event=>{
       renderAnalysis();
       break;
     case 'run': case 'diagnose':
-      try{lastResult=calculate(work==='diagnose');showResult()}
+      try{
+        lastResult=calculate(work==='diagnose');showResult();
+        if(lastResult.warnings?.length)showDialog('同类型活动对比提示',
+          '<ul>'+lastResult.warnings.map(text=>'<li>'+escape(text)+'</li>').join('')+'</ul>');
+      }
       catch(error){
         lastResult=undefined;
         main.querySelector('#analysis-output').innerHTML='<p class="notice">'+escape(error.message)+'</p>';
