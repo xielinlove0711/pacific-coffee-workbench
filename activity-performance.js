@@ -82,8 +82,8 @@ function performanceTrend(activity,key){
 function performanceCards(rows){
   const common=new Set(['总营收','总单量','客单价']);
   return '<div class="performance-cards">'+rows.map(([label,value,formula])=>
-    '<div class="metric"><div class="muted">'+(common.has(label)?escape(label):metricHelpLabel(label,formula))+'</div>'+
-    '<div class="big">'+escape(value)+'</div></div>').join('')+'</div>';
+    '<div class="metric"><div class="muted">'+metricHelpLabel(metricDisplay(label),formula)+'</div>'+
+    '<div class="big">'+escape(metricDisplay(value))+'</div></div>').join('')+'</div>';
 }
 
 const performanceFilters={query:'',type:'',goal:'',status:''};

@@ -89,7 +89,12 @@ const state = a => {
   return {completeness,trend,mean,strata,roi,ci,attributed,interval,crosses,label,reason,finalize:attributed && interval && a.report.can_finalize===true};
 };
 const badge = s => '<span class="badge '+(s.label==='证据通过'?'ok':s.label==='暂不可估'?'':'warn')+'" title="'+escape(s.reason)+'">'+s.label+'</span>';
-const metric = (label,value,note) => '<div class="metric"><div class="muted">'+label+'</div><div class="big">'+value+'</div><small>'+note+'</small></div>';
+function metricDisplay(value){return String(value??'').replace(/（\s*(?:HKD|单|人|家|条|件|%)\s*）|\(\s*(?:HKD|orders?|members?|stores?|units?|%)\s*\)/gi,'').replace(/\s*HKD\b/g,'').replace(/\s+(?:单|人|家|条|件)$/,'').trim()}
+function metricHeading(label,note=''){
+  const help=[/HKD/.test(label)?'金额单位：HKD':'',note].filter(Boolean).join('。');
+  return '<div class="muted"'+(help?' tabindex="0" data-metric-help="'+escape(help)+'"':'')+'>'+metricDisplay(label)+'</div>';
+}
+const metric = (label,value,note) => '<div class="metric" data-metric-export-label="'+escape(label)+'">'+metricHeading(label,note)+'<div class="big">'+metricDisplay(value)+'</div></div>';
 const head = (title,sub) => '<div class="pagehead"><h1>'+title+'</h1><p class="sub">'+sub+'</p></div>';
 const table = (columns, records) => '<div class="scroller"><table><thead><tr>'+columns.map(([name,cls])=>'<th scope="col" class="'+(cls||'')+'">'+name+'</th>').join('')+'</tr></thead><tbody>'+records.map(record=>'<tr>'+record.map((cell,i)=>'<td class="'+(columns[i][1]||'')+'">'+cell+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';
 const options = (values, first) => '<option value="">'+first+'</option>'+values.map(v=>'<option value="'+escape(v)+'">'+escape(v)+'</option>').join('');
@@ -272,8 +277,8 @@ function summary(){
   const priorSpend=priorCosts.some(numeric)?priorCosts.reduce((sum,n)=>sum+(n??0),0):null;
   const revenueChange=overview?comparison(recorded?total:null,priorRevenue,priorPeriod):'';
   const spendChange=overview&&costAvailable?comparison(costTotal,priorSpend,priorPeriod):'';
-  const metricWithChange=(label,value,change)=>'<div class="metric"><div class="muted">'+label+
-    '</div><div class="metric-value-row"><div class="big">'+value+'</div><span class="metric-change">'+change+'</span></div></div>';
+  const metricWithChange=(label,value,change)=>'<div class="metric" data-metric-export-label="'+escape(label)+'">'+metricHeading(label)+
+    '<div class="metric-value-row"><div class="big">'+metricDisplay(value)+'</div><span class="metric-change">'+change+'</span></div></div>';
   main.innerHTML='<div class="row spread summary-page-head">'+head(titles[summaryView],'会员与散客交易')+
     '<button type="button" class="compact-action accent-action no-print" data-action="export-summary"><span class="action-symbol" aria-hidden="true">↓</span>导出 Excel</button></div>'+
     '<section class="panel">'+controls+'</section><section class="metrics">'+

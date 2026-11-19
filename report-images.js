@@ -3,6 +3,7 @@
 function reportBlocks(draft){
   const blocks=[];
   draft.evidence.forEach((r,i)=>{
+    if(r.textOnly)return;
     r.figureId ||= crypto.randomUUID();
     const images=r.reportImages?.length?r.reportImages:[null];
     images.forEach((src,j)=>blocks.push({key:r.figureId+':'+j,r,i,j,src}));
@@ -66,7 +67,7 @@ async function makeEvidenceImages(result){
 let reportImagePreparing=false;
 async function prepareReportImages(draft){
   if(reportImagePreparing)return;
-  const pending=draft.evidence.filter(result=>!result.reportImages?.length);
+  const pending=draft.evidence.filter(result=>!result.textOnly&&!result.reportImages?.length);
   if(!pending.length)return;
   reportImagePreparing=true;
   try{
@@ -138,6 +139,7 @@ document.addEventListener('drop',event=>{
   if(reportDrag.materialId){
     const item=scratchRead().find(item=>item.id===reportDrag.materialId);
     if(!item){clearReportDropHints();return}
+    if(item.kind==='text'||item.kind==='note'){placeScratchText(item,dropRange);saveWorkspace();clearReportDropHints();reportDrag=undefined;renderWorkspace();return}
     let result=draft.evidence.find(r=>r.materialId===item.id);
     if(!result){result=scratchResult(item);draft.evidence.push(result)}
     reportBlocks(draft);

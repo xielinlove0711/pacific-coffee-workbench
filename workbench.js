@@ -1,7 +1,7 @@
 'use strict';
 
 const methodsList = {period:'同期对比', general:'普通活动对比', peer:'同类型活动对比', did:'增量效果评估'};
-const analysisForm = {method:'period', activity:'', peer:'', periodActivity:'', periodPeer:'', periodMonth:'', referenceMonth:'', pre:28, margin:'68', metric:'revenue', district:'', store:'', channel:''};
+const analysisForm = {method:'period', activity:'', peer:'', periodActivity:'', periodPeer:'', periodMonth:'', referenceMonth:'', pre:28, margin:'68', metric:'revenue', district:'', store:'', channel:'',didUnit:'store',didReviewed:false};
 let currentRuns = [];
 let runsRole;
 let lastResult;
@@ -190,24 +190,21 @@ function renderAnalysis(id) {
   }
   f.periodMonth ||= summaryScope.to.slice(0,7);
   f.referenceMonth ||= f.periodMonth;
-  if(f.method==='did'&&f.activity&&!didReadiness(activities[f.activity].activity_summary).holdout){
-    f.activity='';
-    lastResult=undefined;
-  }
+  if(f.method==='did'&&f.activity&&activities[f.activity]&&!didReadiness(activities[f.activity].activity_summary).ready){f.activity='';f.didReviewed=false;lastResult=undefined;}
   const chosen=activities[f.activity]?.activity_summary;
   const peers=allowed.filter(a=>a.activity_id!==f.activity&&(f.method!=='peer'||(chosen&&a.type===chosen.type)));
   if(f.method==='peer'&&!peers.some(a=>a.activity_id===f.peer))f.peer='';
   const activityOptions=items=>items.map(a=>{
     const readiness=f.method==='did'?didReadiness(a):null;
-    const disabled=readiness&&!readiness.holdout;
-    const prefix=readiness?(disabled?'[未进行 Holdout · 不可选] ':'[Holdout · '+readiness.label+'] '):'';
+    const disabled=!!readiness&&!readiness.ready;
+    const prefix=readiness?.ready?'✓ ':'';
     return '<option value="'+a.activity_id+'"'+(disabled?' disabled':'')+'>'+escape(prefix+a.name)+'</option>';
   }).join('');
   const isDid=f.method==='did';
   const pairMode=f.method==='peer'||f.method==='general';
   main.innerHTML=head('对比分析','选择基准和指标。每次运行可单独保存到报告。')+
     '<div class="method-grid">'+Object.entries(methodsList).map(([key,label])=>
-      '<button class="panel method-choice '+(key===f.method?'active':'')+'" data-work="method" data-value="'+key+'" aria-pressed="'+(key===f.method)+'"><strong>'+label+(key==='did'?'<span class="did-question" data-metric-help="'+escape('DID（双重差分）用处理组活动前后的变化，减去对照组同期的变化，估计活动差异。本页仅允许选择有 Holdout 设计记录的活动。Holdout 是投放前预先留出的对照人群；还需保存分组名单及两组前后交易，并复核平行趋势和同期活动。有设计记录但缺少明细时需补数据才能运行。')+'" aria-hidden="true">?</span>':'')+'</strong><small>'+
+      '<button class="panel method-choice '+(key===f.method?'active':'')+'" data-work="method" data-value="'+key+'" aria-pressed="'+(key===f.method)+'"><strong>'+label+(key==='did'?'<span class="did-question" data-metric-help="'+escape('DID（双重差分）用处理组活动前后的变化，减去对照组同期的变化，估计活动差异。会员随机留出与门店对照是两种独立设计；门店对照不要求记录会员 Holdout。Holdout 是投放前预先留出的对照人群；还需保存分组名单及两组前后交易，并复核平行趋势和同期活动。有设计记录但缺少明细时需补数据才能运行。')+'" aria-hidden="true">?</span>':'')+'</strong><small>'+
       {period:'跨年同月或同年同期的活动对比',general:'任选两场非常设活动',peer:'按活动开始后的相同天数比较',did:'评估活动带来的额外增长'}[key]+'</small></button>').join('')+'</div>'+
     (isDid?didGuidePanel(chosen):'')+
     '<section class="panel toolbar work-fields">'+
@@ -219,11 +216,11 @@ function renderAnalysis(id) {
     (f.metric==='revenue'?'<label>情景毛利率（%） <input type="number" min="0" max="100" step="0.1" data-analysis="margin"></label>':'')+
     '<label>交易渠道 <select data-analysis="channel">'+options(revenueData.channels,'全部')+'</select></label>'+
     (!isDid?'<label>区域 <select data-analysis="district">'+options([...new Set(availableStores().map(s=>s.district))],'全部')+'</select></label><label>门店 <select data-analysis="store">'+options(availableStores().map(s=>s.name),'全部')+'</select></label>':'')+
-    (isDid?'<button data-work="diagnose">运行前趋势诊断</button>':'')+
-    '<button class="primary" data-work="run">运行对比</button></section>'+
+    (isDid?'<button data-work="diagnose" '+(!chosen||!didReadiness(chosen).ready?'disabled':'')+'>运行前趋势诊断</button>':'')+
+    '<button class="primary" data-work="run" '+(isDid&&(!chosen||!didReadiness(chosen).ready)?'disabled':'')+'>'+(isDid?'运行增量评估':'运行对比')+'</button></section>'+
     '<div id="analysis-output" aria-live="polite"></div>'+
     '<section class="panel pad"><h2>已保存的比较</h2><div id="run-list"></div></section>';
-  for(const input of main.querySelectorAll('[data-analysis]')) input.value=f[input.dataset.analysis];
+  for(const input of main.querySelectorAll('[data-analysis]')){if(input.type==='checkbox')input.checked=!!f[input.dataset.analysis];else input.value=f[input.dataset.analysis]}
   showResult();
 }
 
@@ -276,14 +273,22 @@ function calculate(onlyPre) {
   const total=xs=>xs.reduce((sum,x)=>sum+x,0);
   const avg=xs=>total(xs)/xs.length;
   const groupA=shops(a?.stores,f.method!=='did');
-  const take=(group,days,normalize)=>sample(group,days,f.metric,f.channel,normalize);
+  const experiment=activities[a?.activity_id]?.experiment;
+  const take=(group,days,normalize)=>{
+    if(f.method!=='did'||experiment?.unit!=='store')return sample(group,days,f.metric,f.channel,normalize);
+    const values=new Map(days.map(d=>[d,0]));
+    for(const shop of group)for(const [d,cents,orders] of experiment.stores[shop.name]||[])if(values.has(d))values.set(d,values.get(d)+(f.metric==='orders'?orders:cents/100));
+    return [...values.values()].map(v=>normalize?v/group.length:v);
+  };
   const result={title:methodsList[f.method],source:'会员与散客交易 · '+(f.channel||'全部交易渠道'),unit,method:f.method};
   let days, first, second;
   if(f.method==='did'&&a){
     const eligibility=didReadiness(a);
-    if(!eligibility.holdout)throw Error('该活动未进行 Holdout，无法选择。下次投放前设置随机留出组，冻结分组名单并保留两组前后交易。');
+    if(!onlyPre&&!didDiagnosed.has(didKey()))calculate(true);
+    if(f.channel&&experiment)throw Error('实验日表不分交易渠道，请选择全部交易渠道。');
     if(!eligibility.ready)throw Error(eligibility.issues.map(([issue,action])=>issue+'。'+action).join(' '));
   }
+  if(f.method==='did'&&f.didUnit==='member')return calculateMemberExperiment(a,onlyPre);
   if(!['period','peer'].includes(f.method)&&!groupA.length)throw Error('所选范围没有可用门店。');
   if(f.method==='period'){
     const {periodMonth,referenceMonth}=f;
@@ -396,15 +401,19 @@ function calculate(onlyPre) {
     result.labels=['处理组','对照组'];
     result.unit=unit+'/店日';
     result.start=a.start;
-    result.title=onlyPre?'平行趋势诊断':'增量效果评估';
-    result.note='探索性结果。活动前差值的变化用于检查趋势偏离；需复核同期活动、营业变化及组间污染。';
+    result.title=onlyPre?'门店前趋势诊断':'门店对照探索评估';
+    result.assessment={path:'store',preDays:Number(f.pre),reviewed:!onlyPre&&!!f.didReviewed,warnings:didReadiness(a).warnings};
+    if(onlyPre)didDiagnosed.add(didKey());
+    result.source=experiment?'合成验证数据 · 独立门店实验日表':result.source;
+    result.note=(experiment?'合成验证数据，不代表真实效果。':'')+'探索性门店估计，不等同于会员随机实验，也不自动证明活动因果效果。前期差值漂移仅为描述性诊断，不是平行趋势成立的统计证明。'+didReadiness(a).warnings.join(' ');
     result.diagnostics=[['前窗均值 '+result.labels[0],avg(first.slice(0,pre.length))],['前窗均值 '+result.labels[1],avg(second.slice(0,pre.length))],['前窗后半段与前半段的组间差值变化',gapChange]];
     if(!onlyPre){
       const ag=avg(first.slice(pre.length)),bg=avg(second.slice(pre.length));
       result.diagnostics.push(['活动期均值 '+result.labels[0],ag],['活动期均值 '+result.labels[1],bg]);
       result.delta=ag-bg-avg(gaps);
       result.baseline=bg+avg(gaps);
-      comparisonEconomics(result,a,groupA,post.length);
+      if(experiment)for(const type of [...new Set(groupA.map(shop=>shop.type))]){const left=groupA.filter(shop=>shop.type===type),right=groupB.filter(shop=>shop.type===type);if(right.length)result.diagnostics.push([type+' · 每店日增量',avg(take(left,post,true))-avg(take(left,pre,true))-avg(take(right,post,true))+avg(take(right,pre,true))]);}
+      if(!experiment)comparisonEconomics(result,a,groupA,post.length);else result.economicsNote='合成实验仅验证差异估计；不与原始预算混合计算ROI。';
       const variation=group=>group.map(shop=>avg(take([shop],post))-avg(take([shop],pre)));
       const changes=[variation(groupA),variation(groupB)];
       if(changes.every(xs=>xs.length>=10)){
@@ -429,9 +438,43 @@ function resultSummary(r) {
   return (r.method==='did'?'DID 探索估计 ':'观察差异 ')+fmt(r.delta,2)+' '+r.unit+relative+interval+'。'+formula;
 }
 
+function incrementalVerdict(r){
+  const synthetic=r.assessment?.synthetic||/合成/.test(r.source||'');
+  const prefix=synthetic?'合成验证：':'';
+  if(!numeric(r.delta))return prefix+(r.assessment?.path==='member'?'分组检查通过，可继续评估活动增量。':'前期诊断已完成，当前仅支持探索评估，不能据此确认活动因果效果。');
+  if(r.interval){const [low,high]=r.interval;
+    return prefix+(low<=0&&high>=0?'本次评估未发现明确增量，95%区间包含零。':low>0?'本次评估显示正向差异，'+(synthetic?'仅用于验证分析流程。':'仍需结合分组条件判断因果效果。'):'本次评估显示负向差异，'+(synthetic?'仅用于验证分析流程。':'仍需结合分组条件判断因果效果。'));
+  }
+  return prefix+'本次结果仅作探索参考，样本不足以给出可靠区间。';
+}
+function incrementalResultHTML(r){
+  const d=r.diagnostics||[],member=r.assessment?.path==='member',evaluated=numeric(r.delta);
+  const card=(title,value,unit='')=>'<div class="incremental-result-stat"><span>'+escape(title)+'</span><strong>'+escape(value)+'</strong><small>'+escape(unit)+'</small></div>';
+  let stats='';
+  if(evaluated){
+    stats+=card(member?'人均增量':'每店日增量',(r.delta>0?'+':'')+fmt(r.delta,2),r.unit);
+    stats+=card('相对差异',r.baseline>0?(r.delta>0?'+':'')+pct(r.delta/r.baseline*100):'—');
+    stats+=card('95% 区间',r.interval?r.interval.map(v=>fmt(v,2)).join(' ~ '):'—',r.unit);
+  }else{
+    stats+=card('处理组前期均值',fmt(d[0]?.[1],2),r.unit);
+    stats+=card((member?'留出组':'对照组')+'前期均值',fmt(d[1]?.[1],2),r.unit);
+    stats+=card('前期均值差',fmt((d[0]?.[1]||0)-(d[1]?.[1]||0),2),r.unit);
+  }
+  let rows='';
+  if(evaluated){
+    const postIndex=member?2:3;
+    const values=[['活动前',d[0]?.[1],d[1]?.[1]],['活动期',d[postIndex]?.[1],d[postIndex+1]?.[1]]];
+    rows=table([['阶段'],['处理组','num'],[member?'留出组':'对照组','num'],['两组差异','num']],values.map(([label,a,b])=>[label,fmt(a,2),fmt(b,2),fmt(a-b,2)]));
+  }
+  return '<article class="panel pad evidence-card incremental-result"><h3>'+escape(r.title)+'</h3><p class="sub">'+escape(r.detail)+' · '+escape(r.source)+'</p><p class="incremental-verdict">'+escape(incrementalVerdict(r))+'</p>'+
+    (r.points?.length?chart(r.points,{heading:escape(r.title),unit:escape(r.unit),first:r.labels[0],second:r.labels[1]||'',start:r.start}):'')+
+    '<div class="incremental-result-stats">'+stats+'</div>'+rows+'</article>';
+}
+
 function evidenceHTML(r) {
+  if(r.method==='did'&&!r.snapshotHTML)return incrementalResultHTML(r);
   if(r.snapshotHTML)return '<article class="panel pad evidence-card"><h3>'+escape(r.title)+'</h3>'+r.snapshotHTML+
-    (r.note?'<p class="preserve" data-language-original>'+escape(r.note)+'</p>':'')+'</article>';
+    (r.note&&r.method!=='did'?'<p class="preserve" data-language-original>'+escape(r.note)+'</p>':'')+'</article>';
   return '<article class="panel pad evidence-card"><h3>'+escape(r.title)+'</h3><p class="sub">'+escape(r.detail)+' · '+escape(r.source)+'</p>'+
     (r.points.length?chart(r.points,{heading:escape(r.title),unit:escape(r.unit),first:r.labels[0],second:r.labels[1]||'',start:r.start}):'')+
     (r.warnings?.length?'<details class="fold"><summary>活动期间与门店范围提示</summary><ul>'+r.warnings.map(text=>'<li>'+escape(text)+'</li>').join('')+'</ul></details>':'')+
@@ -687,7 +730,8 @@ document.addEventListener('input',event=>{
 document.addEventListener('change',event=>{
   const key=event.target.dataset.analysis;
   if(!key)return;
-  analysisForm[key]=event.target.value;
+  analysisForm[key]=event.target.type==='checkbox'?event.target.checked:event.target.value;
+  if(key!=='didReviewed')analysisForm.didReviewed=false;
   lastResult=undefined;
   if(key==='activity')analysisForm.peer='';
   if(key==='periodMonth')analysisForm.periodActivity='';
@@ -711,7 +755,7 @@ document.addEventListener('click',event=>{
       break;
     case 'run': case 'diagnose':
       try{
-        lastResult=calculate(work==='diagnose');showResult();
+        lastResult=calculate(work==='diagnose');if(analysisForm.method==='did')renderAnalysis();else showResult();
         if(lastResult.warnings?.length)showDialog('同类型活动对比提示',
           '<ul>'+lastResult.warnings.map(text=>'<li>'+escape(text)+'</li>').join('')+'</ul>');
       }

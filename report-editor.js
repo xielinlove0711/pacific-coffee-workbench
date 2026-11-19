@@ -146,3 +146,16 @@ function reportRangeAtPoint(x,y){
   const position=document.caretPositionFromPoint?.(x,y);if(!position)return;
   const range=document.createRange();range.setStart(position.offsetNode,position.offset);return range;
 }
+
+function insertReportTextAtRange(text,range){
+  const editor=document.querySelector('#report-body-editor'),draft=workspaceDraft();
+  if(!editor){draft.bodyHTML=reportBodyHTML(draft)+reportBodyHTML({text});draft.text=reportPlainText(draft.bodyHTML);return}
+  const fragment=document.createDocumentFragment();
+  for(const line of text.split('\n')){const p=document.createElement('p');p.textContent=line;fragment.append(p)}
+  if(range&&editor.contains(range.startContainer)&&!range.startContainer.parentElement?.closest('[data-report-row]')){
+    range.collapse(true);let block=range.startContainer.nodeType===1?range.startContainer:range.startContainer.parentElement;
+    while(block.parentElement&&block.parentElement!==editor)block=block.parentElement;
+    if(block!==editor&&block.parentElement===editor){const tail=range.cloneRange();tail.setEndAfter(block);fragment.append(tail.extractContents());block.after(fragment)}else range.insertNode(fragment);
+  }else editor.append(fragment);
+  saveRichReport();
+}

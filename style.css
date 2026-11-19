@@ -646,3 +646,23 @@ html[lang=en] .comparison-matrix th:first-child{width:29%}html[lang=en] .compari
 :root:not([data-theme=dark]) .tooltip .currency-unit,:root:not([data-theme=dark]) .metric-help .currency-unit{color:#841923}
 .metric-help{max-width:min(390px,calc(100vw - 20px));padding:10px 13px}
 .weekday-column>span:last-of-type{white-space:nowrap}
+/* Collection controls occupy their own row; they never overlay chart marks. */
+.visual-action-wrap{display:flex;flex-direction:column;min-width:0;width:100%}
+.visual-action-bar{display:flex;align-items:center;justify-content:flex-end;gap:5px;min-height:28px;margin:2px 0 6px;flex:none}
+.visual-action-bar .scratch-collect,.visual-action-bar .chart-download{position:static;inset:auto;flex:none;width:25px;height:25px;background:transparent;opacity:1}
+.visual-action-bar .scratch-collect:hover{background:var(--soft)}
+.visual-action-wrap>.downloadable-chart{padding-top:0;margin-top:0}
+.visual-action-wrap>.performance-bars{padding-top:0}
+.donut-action-wrap{width:174px;flex:none}.goal-action-wrap{width:138px;flex:none}
+.metric-heading-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.metric-heading-actions>.scratch-collect{position:static;inset:auto;flex:0 0 20px;width:20px;height:20px;line-height:1;background:transparent}
+@media(max-width:650px){.goal-action-wrap{width:128px}}
+@media print{.visual-action-bar{display:none}.visual-action-wrap{break-inside:avoid}}
+
+.scratch-text-item{padding:11px 12px}.scratch-text-content{font-size:13px;line-height:1.7;white-space:pre-line;margin:0 0 8px;font-weight:550}.scratch-text-source{position:relative;font-size:11px;color:var(--muted)}.scratch-text-source summary{list-style:none;cursor:pointer}.scratch-text-source[open] p{margin-top:6px}.scratch-text-item .row{gap:10px;align-items:center}
+
+.scratch-pencil{display:grid;place-items:center;width:23px;height:23px;padding:4px;border:0;background:transparent;color:var(--coffee-line);border-radius:4px}.scratch-pencil svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}.scratch-pencil:hover{background:var(--soft);color:var(--red)}.scratch-remark-editor{margin:5px 0}.scratch-remark-editor [hidden]{display:none!important}.scratch-item .scratch-remark-editor textarea{margin:0;min-height:32px;line-height:1.6;field-sizing:content;max-height:160px}
+.incremental-methods{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}.incremental-method{padding:14px;text-align:left;background:var(--bg);border:1px solid var(--line)}.incremental-method.active{border-color:var(--red);box-shadow:inset 0 0 0 1px var(--red)}.incremental-method small{display:block;color:var(--muted);font-size:12px;line-height:1.6;margin-top:5px}.incremental-selection{border-top:1px solid var(--line);padding-top:13px}.incremental-guide h2{margin:0;font-size:16px}.incremental-steps{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0;color:var(--red);font-size:12px}.incremental-steps span{padding:4px 8px;background:var(--soft);border-radius:4px}.incremental-warnings{color:var(--muted);font-size:12px;line-height:1.8;padding-left:19px}.incremental-review{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.7}.incremental-review input{margin-top:4px;flex:none}@media(max-width:700px){.incremental-methods{grid-template-columns:1fr}}
+
+/* Compact incremental results */
+.incremental-verdict{padding:10px 14px;border-left:3px solid var(--red,#9b2030);background:var(--soft,rgba(142,37,49,.05));font-weight:600;font-size:14px;line-height:1.6}.incremental-result-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:18px 0}.incremental-result-stat{min-width:0;padding:12px 0;border-top:1px solid var(--line,#ddd)}.incremental-result-stat>span{display:block;font-size:12px;color:var(--muted,#85736b)}.incremental-result-stat strong{display:block;font-size:clamp(18px,2vw,26px);margin:5px 0;font-variant-numeric:tabular-nums}.incremental-result-stat small{color:var(--muted,#85736b);font-size:11px}@media(max-width:640px){.incremental-result-stats{gap:9px}.incremental-result-stat strong{font-size:17px}}

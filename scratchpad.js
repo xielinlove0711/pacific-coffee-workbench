@@ -25,7 +25,27 @@ function scratchUser(){
 }
 function scratchKey(){return 'pacific-materials-'+scratchUser()}
 function scratchRead(){
-  try{return (JSON.parse(localStorage.getItem(scratchKey()))||[]).map(enrichScratchMetadata)}catch{return []}
+  try{return (JSON.parse(localStorage.getItem(scratchKey()))||[]).map(normalizeScratchItem).map(enrichScratchMetadata)}catch{return []}
+}
+function metricTextItem(target,title){
+  const label=target.dataset.metricExportLabel||title;
+  const value=target.querySelector('.big')?.textContent.trim()||'—';
+  const help=[...target.querySelectorAll('[data-metric-help]')].map(n=>n.dataset.metricHelp).join(' ');
+  const monetary=/HKD|营收|客单价|投入|花费|毛利|CPM|revenue|order value|spend|cost|profit/i.test(label+' '+help);
+  const unit=monetary&&!value.includes('HKD')&&!value.includes('%')&&value!=='—'?' HKD':'';
+  const plainTitle=metricDisplay(title).replace(/＋/g,'').trim();
+  return {kind:'text',title:plainTitle,text:plainTitle+'：'+value+unit};
+}
+function normalizeScratchItem(item){
+  if(item.kind==='snapshot'&&item.html){
+    const host=document.createElement('div');host.innerHTML=item.html;
+    const metric=host.querySelector('.metric');
+    if(metric&&!host.querySelector('svg,.performance-bars')){
+      const normalized={...item,...metricTextItem(metric,item.title)};
+      delete normalized.html;delete normalized.thumbnail;return normalized;
+    }
+  }
+  return item;
 }
 function scratchWrite(items){
   try{localStorage.setItem(scratchKey(),JSON.stringify(items));return true}
@@ -99,6 +119,8 @@ function scratchEvidence(result){
   scratchAdd({kind:'analysis',title:result.title,fingerprint:JSON.stringify(result),result:structuredClone(result)});
 }
 function scratchSnapshot(target,title){
+  if(target.matches('.metric')){const item=metricTextItem(target,title);scratchAdd({...item,fingerprint:JSON.stringify([location.hash,summaryScope,item.title,item.text])});return}
+
   const copy=target.cloneNode(true);
   copy.querySelectorAll('button,.tooltip,[hidden],.chart-download,.scratch-collect').forEach(x=>x.remove());
   // Clear transient hover graphics from the captured chart.
@@ -111,13 +133,18 @@ function updateScratchCount(){
   const counter=document.querySelector('#scratch-count');
   if(counter)counter.textContent=scratchRead().length;
 }
+function scratchRemarkHTML(item){
+  const filled=!!item.remark?.trim();
+  return '<div class="scratch-remark-editor"><button type="button" class="scratch-pencil" data-scratch-edit-remark="'+item.id+'" title="'+localize('记录发现')+'" aria-label="'+localize('记录发现')+'" aria-expanded="'+filled+'"'+(filled?' hidden':'')+'><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12.8 3.2 4 4M3 17l4.3-1L17 6.3a1.5 1.5 0 0 0 0-2.1L15.8 3a1.5 1.5 0 0 0-2.1 0L4 12.7 3 17Z"/></svg></button><textarea rows="1" data-scratch-remark="'+item.id+'" aria-label="'+localize('记录发现')+'" placeholder="记录发现、疑问或下一步行动"'+(filled?'':' hidden')+'>'+escape(item.remark||'')+'</textarea></div>';
+}
 function scratchItemHTML(item){
+  if(item.kind==='text')return '<article class="scratch-item scratch-text-item" draggable="true" data-id="'+item.id+'"><p class="scratch-text-content" data-language-original>'+escape(item.text)+'</p>'+scratchRemarkHTML(item)+'<div class="row"><button class="compact-action" data-scratch="insert" data-id="'+item.id+'">插入报告</button><details class="scratch-text-source"><summary>来源</summary><p class="scratch-source" data-language-original>'+escape(scratchInfo(item))+'</p></details><button class="compact-action" data-scratch="remove" data-id="'+item.id+'">移除</button></div></article>';
   return '<article class="scratch-item" draggable="true" data-id="'+item.id+'"><div class="row spread"><input class="scratch-title" aria-label="素材标题" data-scratch-title="'+item.id+'" value="'+escape(item.title)+'">'+
     '<small>'+({snapshot:'图表／指标',analysis:'分析结果',note:'笔记'}[item.kind]||'素材')+'</small></div>'+
     (item.kind!=='note'?'<div class="scratch-thumbnail" draggable="true" data-thumbnail-id="'+item.id+'">'+(item.thumbnail?'<img draggable="true" src="'+item.thumbnail+'" alt="素材缩略图">':'<small>正在生成缩略图…</small>')+'</div>':'')+
     '<p class="scratch-source" data-language-original>'+escape(scratchInfo(item))+'</p>'+
     '<small>'+new Date(item.time).toLocaleString('zh-CN',{hour12:false})+'</small>'+
-    '<textarea rows="2" data-scratch-remark="'+item.id+'" placeholder="记录发现、疑问或下一步行动">'+escape(item.remark||'')+'</textarea>'+
+    scratchRemarkHTML(item)+
     '<div class="row"><button class="compact-action" data-scratch="insert" data-id="'+item.id+'">插入报告</button>'+
     '<a class="tiny" href="'+escape(item.page||'#summary')+'">回到来源</a>'+
     '<button class="compact-action" data-scratch="up" data-id="'+item.id+'" aria-label="向前移动">↑</button>'+
@@ -155,10 +182,17 @@ function openScratch(){
   void prepareScratchThumbnails();
 }
 function scratchResult(item){
+  if(item.kind==='text'||item.kind==='note')return {title:item.title,detail:scratchInfo(item),source:item.source,summary:item.text||item.remark||item.title,note:item.remark||'',materialId:item.id,textOnly:true,points:[],labels:[],unit:''};
   if(item.kind==='analysis')return {...structuredClone(item.result),materialId:item.id,materialRemark:item.remark};
   return {title:item.title,detail:scratchInfo(item),source:item.source,
     points:[],labels:[],unit:'',summary:item.kind==='note'?(item.remark||item.title):item.text,
     note:item.remark||'',materialId:item.id,snapshotHTML:item.html||''};
+}
+function placeScratchText(item,range){
+  const draft=workspaceDraft();
+  if(!draft.evidence.some(r=>r.materialId===item.id))draft.evidence.push(scratchResult(item));
+  const content=[item.activityIds?.length?scratchGroupTitle(item):'',item.text||item.remark||item.title,item.kind==='text'?item.remark:''].filter(Boolean).join('\n');
+  insertReportTextAtRange(content,range);
 }
 function insertScratch(item){
   const draft=workspaceDraft();
@@ -166,6 +200,7 @@ function insertScratch(item){
     showWorkbookNotice('报告已引用此素材');return;
   }
   if(location.hash==='#reports')rememberReportChange();
+  if(item.kind==='text'||item.kind==='note'){placeScratchText(item,reportSelection);saveWorkspace();if(location.hash==='#reports')renderWorkspace();else location.hash='#reports';showWorkbookNotice('文字已加入报告');return}
   const result=scratchResult(item);draft.evidence.push(result);
   reportBlocks(draft);
   const rows=[...new Set(draft.imageLayout.filter(entry=>entry.key.startsWith(result.figureId+':')).map(entry=>entry.row))];
@@ -183,17 +218,21 @@ function insertScratch(item){
 function renderProfile(){renderPersonalProfile()}
 function collectButtons(){
   document.querySelectorAll('main .chart,main .performance-bars,main .channel-donut-svg,main .goal-ring-refined,main .metric').forEach(target=>{
-    if(target.closest('.workspace-paper,.scratch-item')||target.querySelector(':scope > .scratch-collect'))return;
+    if(target.closest('.workspace-paper,.scratch-item')||target.dataset.scratchBound)return;
     const button=document.createElement('button');
     button.className='scratch-collect no-print';button.type='button';button.textContent='＋';
     button.title='加入素材草稿纸';button.setAttribute('aria-label','加入素材草稿纸');
+    target.dataset.scratchBound='true';
     target.classList.add('scratch-collectable');
     button.addEventListener('click',()=>{
-      const label=target.matches('.metric')?target.querySelector('.muted')?.textContent:
+      const label=target.matches('.metric')?[...(target.querySelector('.muted')?.childNodes||[])].filter(n=>n.nodeName!=='BUTTON').map(n=>n.textContent).join(''):
         target.closest('section')?.querySelector('h2,h3,h4')?.textContent;
       scratchSnapshot(target,label?.trim()||'数据图表');
     });
-    target.append(button);
+    if(target.matches('.metric')){
+      const heading=target.querySelector('.muted');
+      if(heading){heading.classList.add('metric-heading-actions');heading.append(button)}
+    }else visualActionBar(target).append(button);
   });
 }
 document.addEventListener('click',event=>{
@@ -300,3 +339,14 @@ function closeDepartedScratchSidebar(){
   return true;
 }
 window.addEventListener('hashchange',()=>{if(!closeDepartedScratchSidebar()&&scratchIsOpen)openScratch()});
+
+document.addEventListener('click',event=>{
+  const button=event.target.closest('[data-scratch-edit-remark]');if(!button)return;
+  const field=button.parentElement.querySelector('[data-scratch-remark]');
+  button.hidden=true;button.setAttribute('aria-expanded','true');field.hidden=false;field.focus();
+});
+document.addEventListener('focusout',event=>{
+  const field=event.target;if(!field.matches('[data-scratch-remark]')||field.value.trim())return;
+  field.hidden=true;const button=field.parentElement.querySelector('[data-scratch-edit-remark]');
+  if(button){button.hidden=false;button.setAttribute('aria-expanded','false')}
+});

@@ -48,7 +48,7 @@ function summaryExportSheets(){
     for(const [key,label] of Object.entries(labels))if(filters[key])scopeRows.push([label,filters[key]]);
   }
   if(['activity','overview'].includes(summaryView)){
-    scopeRows.push(['活动花费','v7 校准表总投入；ROI、CPM 与花费使用活动全期口径。'],
+    scopeRows.push(['活动花费','v9 校准表总投入；ROI、CPM 与花费使用活动全期口径。'],
       ['ROI（校准）',economicsHeaders.roi.help],['广告 CPM',economicsHeaders.cpm.help],['送达率',economicsHeaders.delivery.help]);
   }
   if(summaryView==='overview'){
@@ -60,10 +60,10 @@ function summaryExportSheets(){
   }
   if(summaryView==='overview')scopeRows.push(['商品榜','按交易商品售出件数。增长率＝（当前销量 − 上一等长区间销量）÷ 上一等长区间销量 × 100%；基准至少 10 件。']);
   const cards=[...main.querySelectorAll('.metrics .metric')].map(card=>{
-    const label=card.querySelector('.muted')?.textContent.trim();
+    const label=card.dataset.metricExportLabel||[...(card.querySelector('.muted')?.childNodes||[])].filter(n=>n.nodeName!=='BUTTON').map(n=>n.textContent).join('').trim();
     const value=card.querySelector('.big')?.textContent.trim();
     const numericValue=Number(value?.replace(/,/g,''));
-    return [label,value&&Number.isFinite(numericValue)?numericValue:value,card.querySelector('small')?.textContent.trim()];
+    return [label,value&&Number.isFinite(numericValue)?numericValue:value,card.querySelector('[data-metric-help]')?.dataset.metricHelp||''];
   });
   const result=[['筛选与口径',['项目','内容'],scopeRows],['核心指标',['指标','数值','说明'],cards]];
   if(summaryView==='overview')result.push(...overviewExportSheets);

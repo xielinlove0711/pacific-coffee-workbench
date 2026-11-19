@@ -49,9 +49,22 @@ async function chartCanvas(target){
   return canvas;
 }
 
+function visualActionBar(target){
+  let wrap=target.parentElement;
+  if(!wrap.classList.contains('visual-action-wrap')){
+    wrap=document.createElement('div');wrap.className='visual-action-wrap';
+    if(target.matches('.channel-donut-svg'))wrap.classList.add('donut-action-wrap');
+    if(target.matches('.goal-ring-refined'))wrap.classList.add('goal-action-wrap');
+    target.before(wrap);wrap.append(target);
+  }
+  let bar=wrap.querySelector(':scope > .visual-action-bar');
+  if(!bar){bar=document.createElement('div');bar.className='visual-action-bar no-print';wrap.prepend(bar)}
+  return bar;
+}
 function attachChartDownloads(){
   document.querySelectorAll('main .chart').forEach(target=>{
-    if(target.querySelector(':scope > .chart-download'))return;
+    if(target.dataset.downloadBound)return;
+    target.dataset.downloadBound='true';
     target.classList.add('downloadable-chart');
     const button=document.createElement('button');
     button.type='button';
@@ -71,7 +84,7 @@ function attachChartDownloads(){
         showWorkbookNotice(localize('图表下载失败，请重试。'),true);
       }finally{button.disabled=false}
     });
-    target.append(button);
+    visualActionBar(target).append(button);
   });
 }
 let chartDownloadPending=false;
