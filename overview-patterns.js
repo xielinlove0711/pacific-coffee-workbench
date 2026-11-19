@@ -23,7 +23,7 @@ function overviewPatternPanels(shops,from,to,channelPanel=''){
     return '<div class="weekday-column" tabindex="0" data-metric-help="'+escape(help)+'" aria-label="'+escape(help)+'">'+
       '<span class="weekday-value">'+(numeric(value)?fmt(value/1000,1)+'k':'—')+'</span>'+
       '<div class="weekday-track"><i style="height:'+(numeric(value)?value/max*100:0)+'%"></i></div>'+
-      '<span>'+weekday+'</span><small>'+group.count+' 天</small></div>';
+      '<span>'+weekday.replace('星期','周')+'</span><small>'+group.count+' 天</small></div>';
   }).join('');
   const values=[...totals.values()].map(d=>d.revenue).filter(numeric).sort((a,b)=>a-b);
   const thresholds=[.25,.5,.75].map(p=>values[Math.floor((values.length-1)*p)]);
