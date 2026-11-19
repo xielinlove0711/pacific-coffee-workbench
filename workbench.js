@@ -54,7 +54,7 @@ function activityEconomics(s) {
   return {
     cost, gross, delivered,
     roi:validCost&&numeric(gross)?(gross-cost)/cost*100:null,
-    cpm:numeric(cost)&&cost>=0&&delivered>0?cost/delivered*1000:null,
+    cpm:activities[s.activity_id].metrics.ad_cpm??null,
     delivery:sent>0?delivered/sent*100:null
   };
 }
@@ -79,8 +79,8 @@ const economicsHeaders = {
     help:'（校准净增量毛利 − 总投入）÷ 总投入 × 100%。毛利和投入取自 活动预算与效果校准表；原表「净 ROI」为回收倍数。投入缺失、为零或缺毛利时显示「—」。'
   },
   cpm:{
-    label:'送达 CPM（HKD）',
-    help:'活动总投入 ÷ 送达记录 × 1,000。送达记录包括 delivered、opened、clicked。投入缺失或送达记录为零时显示「—」。工作簿缺少广告曝光和独立媒体花费，广告 CPM 暂缺。'
+    label:'广告 CPM（HKD）',
+    help:'活动付费媒体花费 ÷ 广告曝光量 × 1,000。来源：广告投放表，按活动编号汇总所有平台与月份。曝光缺失或为零时显示「—」；不使用总投入或触达消息条数替代。'
   },
   delivery:{
     label:'送达率',
@@ -215,7 +215,7 @@ function renderAnalysis(id) {
     '<label>活动 <select data-analysis="activity"><option value="">请选择活动</option>'+activityOptions(allowed)+'</select></label>'+
       (pairMode?'<label>'+(f.method==='peer'?'同类活动':'对比活动')+' <select data-analysis="peer"><option value="">请选择基准</option>'+activityOptions(peers)+'</select></label>':
       '<label>活动前天数 <select data-analysis="pre"><option>14</option><option>28</option><option>56</option></select></label>'))+
-    '<label>指标 <select data-analysis="metric"><option value="revenue">会员营收</option><option value="orders">会员订单</option></select></label>'+
+    '<label>指标 <select data-analysis="metric"><option value="revenue">总营收</option><option value="orders">总单量</option></select></label>'+
     (f.metric==='revenue'?'<label>情景毛利率（%） <input type="number" min="0" max="100" step="0.1" data-analysis="margin"></label>':'')+
     '<label>交易渠道 <select data-analysis="channel">'+options(revenueData.channels,'全部')+'</select></label>'+
     (!isDid?'<label>区域 <select data-analysis="district">'+options([...new Set(availableStores().map(s=>s.district))],'全部')+'</select></label><label>门店 <select data-analysis="store">'+options(availableStores().map(s=>s.name),'全部')+'</select></label>':'')+
@@ -230,7 +230,7 @@ function renderAnalysis(id) {
 function comparisonEconomics(result,activity,group,days) {
   const f=analysisForm;
   if(f.metric!=='revenue'){
-    result.economicsNote='订单指标可估算订单差异。选择「会员营收」可计算金额和情景 ROI。';
+    result.economicsNote='订单指标可估算订单差异。选择「总营收」可计算金额和情景 ROI。';
     return;
   }
   const margin=Number(f.margin);
@@ -277,7 +277,7 @@ function calculate(onlyPre) {
   const avg=xs=>total(xs)/xs.length;
   const groupA=shops(a?.stores,f.method!=='did');
   const take=(group,days,normalize)=>sample(group,days,f.metric,f.channel,normalize);
-  const result={title:methodsList[f.method],source:'会员交易 · '+(f.channel||'全部交易渠道'),unit,method:f.method};
+  const result={title:methodsList[f.method],source:'会员与散客交易 · '+(f.channel||'全部交易渠道'),unit,method:f.method};
   let days, first, second;
   if(f.method==='did'&&a){
     const eligibility=didReadiness(a);
@@ -320,7 +320,7 @@ function calculate(onlyPre) {
     result.diagnostics=[['当前活动日均值',avg(current)],['基准活动日均值',avg(reference)]];
     enrichComparison(result,a,b,groupA,groupB,currentDays,referenceDays);
     comparisonEconomics(result,a,groupA,currentDays.length);
-    result.note='各自按所选月份内的实际活动天数和参与门店标准化。趋势按月内日号对齐。结果反映参与门店的会员交易差异，可能受同期活动及门店结构影响。';
+    result.note='各自按所选月份内的实际活动天数和参与门店标准化。趋势按月内日号对齐。结果反映参与门店的会员与散客交易差异，可能受同期活动及门店结构影响。';
   }else if(f.method==='peer'||f.method==='general'){
     const sameType=f.method==='peer';
     const b=allowed.find(s=>s.activity_id===f.peer&&(!sameType||s.type===a?.type)&&s.activity_id!==a?.activity_id);
@@ -380,7 +380,7 @@ function calculate(onlyPre) {
     result.unit=unit+'/店日';
     enrichComparison(result,a,b,groupA,groupB,days,allB.slice(0,length));
     comparisonEconomics(result,a,groupA,length);
-    result.note='按参与门店与共同天数标准化。数据为对应门店的会员交易，含其他同期活动影响。';
+    result.note='按参与门店与共同天数标准化。数据为对应门店的会员与散客交易，含其他同期活动影响。';
   }else{
     if(!a||storeMode()||isLong(a))throw Error('请选择有门店对照的短期活动。');
     const groupB=shops(a.control_stores?.filter(name=>!a.stores.includes(name)),false);
@@ -422,7 +422,7 @@ function resultSummary(r) {
   if(r.summary)return r.summary;
   if(!numeric(r.delta)) return r.diagnostics.map(([label,value])=>label+' '+fmt(value,2)+(r.method==='did'?' '+r.unit:'')).join('；');
   const formula=r.method==='did'?'计算口径：（处理组活动期 − 处理组前期）−（对照组活动期 − 对照组前期）；相对差异＝DID ÷ 处理组同期反事实。':
-    r.unit.endsWith('/店日')?'计算口径：活动窗口内会员营收或订单 ÷ 参与门店数 ÷ 日历天数；绝对差异＝当前值 − 基准值，相对差异＝绝对差异 ÷ 基准值。':
+    r.unit.endsWith('/店日')?'计算口径：活动窗口内总营收或订单 ÷ 参与门店数 ÷ 日历天数；绝对差异＝当前值 − 基准值，相对差异＝绝对差异 ÷ 基准值。':
     '计算口径：绝对差异＝当前窗口合计 − 基准窗口合计；相对差异＝绝对差异 ÷ 基准窗口合计。';
   const relative=r.baseline>0?'（'+pct(r.delta/r.baseline*100)+'）':'';
   const interval=r.interval?'。近似 95% 区间 '+r.interval.map(x=>fmt(x,2)).join(' 至 ')+' '+r.unit+'（点估计 ± 1.96 × 门店前后差的组间标准误）':'';
@@ -450,7 +450,7 @@ function showResult() {
 function scopeSnapshot(activity) {
   if(activity&&isLong(activity)){
     return {title:activity.name+'｜常设活动概况',detail:activity.type+' · '+activity.channels.join('、'),
-      source:'会员交易',unit:'',labels:[],points:[],
+      source:'会员与散客交易',unit:'',labels:[],points:[],
       summary:permanentMetrics(activity).map(([key,value])=>key+' '+value).join('；'),
       note:activities[activity.activity_id].activity.mechanism};
   }
@@ -459,12 +459,12 @@ function scopeSnapshot(activity) {
   const channel=activity?'':summaryScope.channel;
   const values=sample(shops,days,'revenue',channel);
   const orders=sample(shops,days,'orders',channel);
-  const source='会员交易 · '+(channel||'全部交易渠道');
+  const source=(activity?.scenario?'新增活动方案 · ':'')+'会员与散客交易 · '+(channel||'全部交易渠道');
   const points=days.map((date,i)=>({date,actual:orders[i]?values[i]:null,baseline:null}));
-  return {title:activity?activity.name+'｜会员营收与订单':'会员营收与订单',detail:(days.length?days[0]+' 至 '+days.at(-1):'无有效活动窗口')+' · '+(activity?shops.length+' 家范围内门店':summaryScope.store||summaryScope.district|| (storeMode()?store:'全部门店')),
-    source,unit:'HKD',labels:['会员营收'],points,
-    diagnostics:[['区间会员营收（HKD）',values.reduce((sum,n)=>sum+n,0)],['会员订单（单）',orders.reduce((sum,n)=>sum+n,0)]],
-    note:'覆盖所选门店的会员交易。无交易记录的日期留空，营业状态待核。'};
+  return {title:activity?activity.name+'｜总营收与订单':'总营收与订单',detail:(days.length?days[0]+' 至 '+days.at(-1):'无有效活动窗口')+' · '+(activity?shops.length+' 家范围内门店':summaryScope.store||summaryScope.district|| (storeMode()?store:'全部门店')),
+    source,unit:'HKD',labels:['总营收'],points,
+    diagnostics:[['区间总营收（HKD）',values.reduce((sum,n)=>sum+n,0)],['总单量（单）',orders.reduce((sum,n)=>sum+n,0)]],
+    note:'覆盖所选门店的会员与散客交易。无交易记录的日期留空，营业状态待核。'};
 }
 
 const reportDefault=()=>({title:'营销活动复盘',text:'',evidence:[]});
@@ -505,7 +505,7 @@ function renderWorkspace(preview=false) {
       '<label class="editor-field">报告标题<input data-draft="title" value="'+escape(draft.title)+'"></label>'+
       reportEditorHTML(draft)+
       '<div class="print-value"><h2 id="print-title" data-language-original>'+escape(draft.title)+'</h2><div id="print-text" class="report-rich-content" data-language-original>'+reportDocumentHTML(draft,true)+'</div></div>')+
-    '<footer>数据来源：太平洋咖啡 · 会员交易</footer></article>'+
+    '<footer>数据来源：太平洋咖啡 · 会员与散客交易</footer></article>'+
     '<div class="report-ai-launch no-print"><button type="button" class="compact-action accent-action" data-work="toggle-ai" aria-expanded="false" aria-controls="report-ai-panel">AI报告助手</button></div>'+
     '<section id="report-ai-panel" class="panel pad no-print" hidden><p class="sub">根据报告素材生成可编辑的复盘段落。</p>'+
     '<div class="assist-buttons"><button data-work="generate">AI数据总结</button><button data-work="ai">AI帮写</button></div>'+
@@ -639,7 +639,7 @@ function downloadWord(draft) {
     'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '+
     'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'+
     '<w:body>'+paragraph(draft.title,true)+evidence+
-    paragraph('数据来源：太平洋咖啡 · 会员交易')+'</w:body></w:document>';
+    paragraph('数据来源：太平洋咖啡 · 会员与散客交易')+'</w:body></w:document>';
   const href=URL.createObjectURL(new Blob(zipDocument(files),{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}));
   const link=document.createElement('a');
   link.href=href;

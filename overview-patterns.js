@@ -19,7 +19,7 @@ function overviewPatternPanels(shops,from,to,channelPanel=''){
   const max=Math.max(1,...averages.filter(numeric));
   const bars=groups.map((group,i)=>{
     const value=averages[i],weekday='星期'+'一二三四五六日'[i];
-    const help=weekday+' · 日均会员营收 '+(numeric(value)?fmt(value,2)+' HKD':'暂无数据')+' · '+group.count+' 个有记录日';
+    const help=weekday+' · 日均总营收 '+(numeric(value)?fmt(value,2)+' HKD':'暂无数据')+' · '+group.count+' 个有记录日';
     return '<div class="weekday-column" tabindex="0" data-metric-help="'+escape(help)+'" aria-label="'+escape(help)+'">'+
       '<span class="weekday-value">'+(numeric(value)?fmt(value/1000,1)+'k':'—')+'</span>'+
       '<div class="weekday-track"><i style="height:'+(numeric(value)?value/max*100:0)+'%"></i></div>'+
@@ -34,12 +34,12 @@ function overviewPatternPanels(shops,from,to,channelPanel=''){
   for(let i=0;i<dates.length;i++){
     const date=dates[i],record=totals.get(date),position=firstDay+i;
     const level=!numeric(record.revenue)?'missing':record.revenue===0?0:1+thresholds.filter(t=>record.revenue>t).length;
-    const help=date+' · '+weekdayLabel(date)+'\n会员营收 '+(numeric(record.revenue)?fmt(record.revenue,2)+' HKD':'无记录')+
-      '\n会员订单 '+(numeric(record.orders)?fmt(record.orders):'—');
+    const help=date+' · '+weekdayLabel(date)+'\n总营收 '+(numeric(record.revenue)?fmt(record.revenue,2)+' HKD':'无记录')+
+      '\n总单量 '+(numeric(record.orders)?fmt(record.orders):'—');
     cells.push('<span tabindex="0" class="calendar-cell intensity-'+level+'" style="grid-column:'+(2+Math.floor(position/7))+
       ';grid-row:'+(position%7+1)+'" data-metric-help="'+escape(help)+'" aria-label="'+escape(help)+'"></span>');
   }
-  return '<div class="overview-pattern-grid overview-secondary-grid"><section class="panel pad"><h2 tabindex="0" data-metric-help="按星期汇总当前筛选范围的会员营收，再除以该星期有交易记录的天数。单位：HKD。">星期经营表现</h2>'+
+  return '<div class="overview-pattern-grid overview-secondary-grid"><section class="panel pad"><h2 tabindex="0" data-metric-help="按星期汇总当前筛选范围的总营收，再除以该星期有交易记录的天数。单位：HKD。">星期经营表现</h2>'+
     '<div class="weekday-columns">'+bars+'</div></section>'+
     '<section class="panel pad"><h2 tabindex="0" data-metric-help="颜色越深，当日营收越高。按当前范围的营收分位数着色，悬停色块可查看当日明细。">营收日历</h2>'+
     '<div class="calendar-scroll"><div class="revenue-calendar" style="grid-template-columns:18px repeat('+weeks+',15px)">'+weekdayHeaders+cells.join('')+
@@ -50,7 +50,7 @@ function overviewPatternPanels(shops,from,to,channelPanel=''){
 
 
 function channelDonutPanel(rows,total){
-  const colors=['#9b3441','#a9988d','#557b76','#7b8496'];
+  const colors=['#9b3441','#a9988d','#557b76','#7b8496','#73604e'];
   let angle=-Math.PI/2;
   const paths=rows.filter(([,count])=>count>0).map(([name,count],i)=>{
     const sweep=count/total*Math.PI*2,finish=angle+sweep;

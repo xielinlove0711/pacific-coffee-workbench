@@ -102,9 +102,9 @@ const summaryScope={from:revenueData.dates.at(-15),to:revenueData.dates.at(-1),s
 const viewSettings=Object.fromEntries(Object.entries({day:'name',store:'revenue',activity:'duration',overview:'duration'})
   .map(([view,sort])=>[view,{sort,direction:-1,type:'',metric:'revenue'}]));
 const summaryMetricLabels={
-  name:'日期',duration:'档期天数',revenue:'会员营收（HKD）',orders:'会员订单量',
-  basket:'会员客单价（HKD）',cost:'活动花费（HKD）',gross:'校准净增量毛利（HKD）',
-  roi:'ROI（%）',cpm:'送达 CPM（HKD）',delivered:'送达记录',delivery:'送达率（%）'
+  name:'日期',duration:'档期天数',revenue:'总营收（HKD）',orders:'总单量',
+  basket:'客单价（HKD）',cost:'活动花费（HKD）',gross:'校准净增量毛利（HKD）',
+  roi:'ROI（%）',cpm:'广告 CPM（HKD）',delivered:'送达记录',delivery:'送达率（%）'
 };
 function summaryMetricKeys(view){
   const transaction=['revenue','orders','basket'];
@@ -274,15 +274,15 @@ function summary(){
   const spendChange=overview&&costAvailable?comparison(costTotal,priorSpend,priorPeriod):'';
   const metricWithChange=(label,value,change)=>'<div class="metric"><div class="muted">'+label+
     '</div><div class="metric-value-row"><div class="big">'+value+'</div><span class="metric-change">'+change+'</span></div></div>';
-  main.innerHTML='<div class="row spread summary-page-head">'+head(titles[summaryView],'会员交易')+
+  main.innerHTML='<div class="row spread summary-page-head">'+head(titles[summaryView],'会员与散客交易')+
     '<button type="button" class="compact-action accent-action no-print" data-action="export-summary"><span class="action-symbol" aria-hidden="true">↓</span>导出 Excel</button></div>'+
     '<section class="panel">'+controls+'</section><section class="metrics">'+
     (overview?metricWithChange('总营收（HKD）',recorded?hkd(total):'—',revenueChange):
-      metric('会员营收（HKD）',recorded?hkd(total):'—',escape(selected||'全部门店')))+
-    metric(overview?'总单量':'会员订单量',recorded?fmt(orderTotal):'—',overview?'':'单')+
+      metric('总营收（HKD）',recorded?hkd(total):'—',escape(selected||'全部门店')))+
+    metric(overview?'总单量':'总单量',recorded?fmt(orderTotal):'—',overview?'':'单')+
     (overview?metric('会员总数',fmt(revenueData.member_count),'')+
       metric('新增会员数',fmt(registrations),''):'')+
-    metric(overview?'客单价（HKD）':'会员客单价（HKD）',orderTotal?hkd(total/orderTotal):'—','')+
+    metric(overview?'客单价（HKD）':'客单价（HKD）',orderTotal?hkd(total/orderTotal):'—','')+
     (overview?metricWithChange('活动投入（HKD）',hkd(costTotal),spendChange):'')+
     (overview?'<div class="metric"><div class="muted">有记录天数</div><div class="big" tabindex="0" data-metric-help="所选范围内">'+recorded+' / '+days.length+'</div></div>':
       metric('有交易记录的天数',recorded+' / '+days.length,'所选范围内'))+'</section>'+
@@ -299,7 +299,7 @@ function summary(){
       baseline:costAvailable&&numeric(costs[i])?costs[i]/100:null}));
     content.innerHTML=overviewTrendPanel(points);
     overviewExportSheets=[
-      ['每日经营',['日期','星期','会员营收（HKD）','会员订单量','客单价（HKD）','活动投入（HKD）'],
+      ['每日经营',['日期','星期','总营收（HKD）','总单量','客单价（HKD）','活动投入（HKD）'],
         days.map((d,i)=>[d.name,weekdayLabel(d.name),numeric(d.revenue)?d.revenue/100:null,d.orders,basketValue(d.revenue,d.orders),
           costAvailable&&numeric(costs[i])?costs[i]/100:null])]
     ];
@@ -343,14 +343,14 @@ function summary(){
   const settings=viewSettings[summaryView];
   const content=document.querySelector('#summary-content');
   const selector=(key,label,values,first)=>'<label>'+label+' <select data-view-setting="'+key+'">'+options(values,first)+'</select></label>';
-  content.innerHTML=(summaryView==='day'?'<section class="panel pad"><div class="row spread"><h2>每日趋势</h2><label>指标 <select data-view-setting="metric"><option value="revenue">会员营收</option><option value="orders">会员订单量</option></select></label></div><div id="summary-chart"></div></section>':'')+
+  content.innerHTML=(summaryView==='day'?'<section class="panel pad"><div class="row spread"><h2>每日趋势</h2><label>指标 <select data-view-setting="metric"><option value="revenue">总营收</option><option value="orders">总单量</option></select></label></div><div id="summary-chart"></div></section>':'')+
     '<section class="panel"><div class="toolbar">'+
     (summaryView==='store'?selector('type','门店类型',[...new Set(included.map(s=>s.type))],'全部类型'):'')+
     summaryMetricControls(summaryView)+
     (summaryView==='store'?'<span class="sub">工作簿暂无按门店拆分的花费、ROI 或 CPM。</span>':
       summaryView==='day'&&!costAvailable?'<span class="sub">日投入仅适用于全网范围。</span>':'')+
     '</div></section>'+
-    (summaryView==='activity'?'<p class="sub summary-note">默认展示全年活动目录及各活动的统计窗口。勾选「限定活动日期」可按所选日期查看。活动营收为统计期间内参与门店的会员交易。活动可能重叠，各行不可加总，也不表示活动增量。</p><div id="activity-catalog"></div>':'<section class="panel" id="summary-results"></section>');
+    (summaryView==='activity'?'<p class="sub summary-note">默认展示全年活动目录及各活动的统计窗口。勾选「限定活动日期」可按所选日期查看。活动营收为统计期间内参与门店的会员与散客交易。活动可能重叠，各行不可加总，也不表示活动增量。</p><div id="activity-catalog"></div>':'<section class="panel" id="summary-results"></section>');
   for(const key of ['type','metric']){
     const field=content.querySelector('[data-view-setting="'+key+'"]');
     if(field)field.value=settings[key];
@@ -372,9 +372,9 @@ function drawSummary(){
   if(chartNode){
     const isRevenue=settings.metric==='revenue';
     chartNode.innerHTML=chart([...rows].sort((a,b)=>a.name.localeCompare(b.name)).map(r=>({date:r.name,actual:isRevenue&&r.revenue!==null?r.revenue/100:r[settings.metric],baseline:null})),
-      {heading:isRevenue?'每日会员营收':'每日会员订单量',unit:isRevenue?'HKD':'单',caption:'趋势按选定日期与门店展示。无交易记录的日期留空。'});
+      {heading:isRevenue?'每日总营收':'每日总单量',unit:isRevenue?'HKD':'单',caption:'趋势按选定日期与门店展示。无交易记录的日期留空。'});
   }
-  const columns=[['name',summaryView==='day'?'日期':'门店'],...(summaryView==='store'?[['type','门店类型']]:[]),['revenue','会员营收（HKD）'],['orders','会员订单量'],['basket','会员客单价（HKD）'],...(summaryView==='day'&&dailySpendAvailable()?[['cost','活动花费（HKD）']]:[]),['status','记录状态']];
+  const columns=[['name',summaryView==='day'?'日期':'门店'],...(summaryView==='store'?[['type','门店类型']]:[]),['revenue','总营收（HKD）'],['orders','总单量'],['basket','客单价（HKD）'],...(summaryView==='day'&&dailySpendAvailable()?[['cost','活动花费（HKD）']]:[]),['status','记录状态']];
   const header=columns.map(([key,label])=>{
     const direction=settings.direction===1?'ascending':'descending';
     const numericClass=['revenue','orders','basket','cost'].includes(key)?' class="num"':'';
@@ -423,7 +423,7 @@ function list(){
   const longOpen=listing.querySelector('.permanent-panel')?.open;
   const long=rows.filter(isLong).sort((a,b)=>a.activity_id.localeCompare(b.activity_id));
   const short=rows.filter(s=>!isLong(s));
-  const columns=()=>(role==='manager'?'<th class="checkcell" scope="col"><span aria-label="选择对比活动">选</span></th>':'')+'<th scope="col">活动名称</th><th scope="col">活动类型</th><th scope="col">档期</th><th scope="col">统计期间</th><th scope="col" class="num">会员营收（HKD）</th><th scope="col" class="num">会员订单量</th><th scope="col" class="num">会员客单价（HKD）</th><th scope="col" class="num">活动花费（HKD）</th><th scope="col" class="num">'+economicsHeader('roi')+'</th><th scope="col" class="num">'+economicsHeader('cpm')+'</th><th scope="col">操作</th>';
+  const columns=()=>(role==='manager'?'<th class="checkcell" scope="col"><span aria-label="选择对比活动">选</span></th>':'')+'<th scope="col">活动名称</th><th scope="col">活动类型</th><th scope="col">档期</th><th scope="col">统计期间</th><th scope="col" class="num">总营收（HKD）</th><th scope="col" class="num">总单量</th><th scope="col" class="num">客单价（HKD）</th><th scope="col" class="num">活动花费（HKD）</th><th scope="col" class="num">'+economicsHeader('roi')+'</th><th scope="col" class="num">'+economicsHeader('cpm')+'</th><th scope="col">操作</th>';
   const campaignTable=(items,label)=>items.length?'<div class="scroller"><table aria-label="'+label+'"><thead><tr>'+columns()+'</tr></thead><tbody>'+items.map(s=>{
     const id=s.activity_id,a=activities[id],e=state(a),sales=metricsById.get(id),kpis=activityEconomics(s);
     const entry='<a class="entry" href="#analysis/performance/'+id+'">看活动效果 →</a> · <a href="#analysis/compare/'+id+'">去对比 →</a>';
@@ -494,7 +494,7 @@ function detail(id,tab){
   const action='<div class="row no-print"><a class="button primary" href="#analysis/'+id+'">去对比分析</a><button data-work="activity-report" data-value="'+id+'">加入报告</button></div>';
   const conclusion=storeMode()?'本店在活动覆盖范围内，执行差异待核对。':numeric(e.roi)?(below?'估计未回本。':'估计达到盈亏线。')+' '+(e.label==='证据通过'?'模拟结果符合归因与显著性规则。':'当前结果不足以支持预算决策。'):e.reason;
   const stats=storeMode()?[
-    ['本店覆盖','已覆盖',store],['本店会员营收',money(storeRow(a)?.revenue),'活动期会员交易'],['本店会员订单',numeric(storeRow(a)?.orders)?fmt(storeRow(a).orders):'无可用数据','活动期订单（单）']
+    ['本店覆盖','已覆盖',store],['本店总营收',money(storeRow(a)?.revenue),'活动期会员与散客交易'],['本店总单量',numeric(storeRow(a)?.orders)?fmt(storeRow(a).orders):'无可用数据','活动期订单（单）']
   ]:[['校准回收倍数',ratio(a.metrics.worked_roi),'活动全期参考'],['增量 ROI','待复核','需有效的增量与成本估计'],['交易日覆盖率',pct(a.data_quality.completeness),'报告闸门 ≥ 90%']];
   const tabs=[['overview','结果概览'],['evidence','归因证据'],['report','复盘报告']];
   main.innerHTML='<a class="back tiny" href="#summary/activity">← 返回按活动</a><div class="pagehead"><div class="row"><h1>'+escape(s.name)+'</h1>'+badge(e)+'</div><p class="sub">'+activityPeriod(s)+' · '+(storeMode()?store:s.stores.length+' 家覆盖门店')+' · '+analysisPeriod(s,t)+'</p></div><div class="notice row spread"><strong>'+conclusion+'</strong>'+action+'</div><div class="metrics">'+stats.map(v=>metric(...v)).join('')+'</div><nav class="tabs no-print" aria-label="详情导航">'+tabs.map(([key,label])=>link(id,key,label,key===tab?'active':'')).join('')+'</nav>'+
@@ -506,7 +506,7 @@ function detail(id,tab){
 }
 function overview(a,e){
   const s=a.activity_summary,t=a.attribution,id=s.activity_id;
-  const execution='<section class="panel pad" id="execution"><h2>本店执行要点</h2><p>'+escape(a.activity.mechanism||'查看活动发布信息')+'</p><p class="sub">核对活动期本店发券与核销记录，记录客诉及门店执行差异。本店营收与订单为会员交易汇总。核销明细未提供，执行差异待验证。</p>'+link(id,'report','查看本店复盘摘要 →','source-link')+'</section>';
+  const execution='<section class="panel pad" id="execution"><h2>本店执行要点</h2><p>'+escape(a.activity.mechanism||'查看活动发布信息')+'</p><p class="sub">核对活动期本店发券与核销记录，记录客诉及门店执行差异。本店营收与订单为会员与散客交易汇总。核销明细未提供，执行差异待验证。</p>'+link(id,'report','查看本店复盘摘要 →','source-link')+'</section>';
   if(storeMode())return execution+quality(a,e);
   const series=a.trend.series.revenue||[];
   const inCampaign=series.filter(p=>p.is_in_campaign);
@@ -516,8 +516,8 @@ function overview(a,e){
   const dims=a.breakdown.dimensions.store?.rows||[];
   const amount=t.net?.total_investment;
   const support=[
-    ['营收与毛利','会员营收',money(a.metrics.revenue),'参与门店·活动期'],
-    ['营收与毛利','会员订单',fmt(a.metrics.orders),'参与门店·活动期（单）'],
+    ['营收与毛利','总营收',money(a.metrics.revenue),'参与门店·活动期'],
+    ['营收与毛利','总单量',fmt(a.metrics.orders),'参与门店·活动期（单）'],
     ['成本与回报','总投入',money(amount),'校准表'],
     ['成本与回报','校准回收倍数',ratio(a.metrics.worked_roi),'校准表'],
     ['触达与核销','触达记录',fmt(a.metrics.sent),'活动触达表（条）'],
@@ -525,7 +525,7 @@ function overview(a,e){
     ['触达与核销','核销率','无可用数据','缺少核销流水']];
 
   return '<section class="panel pad" id="trend"><div class="row spread"><h2>日营收趋势</h2>'+badge(e)+'</div>'+chart(rows,{heading:'日营收趋势',start:isLong(s)?null:date(s.start),end:isLong(s)?null:date(s.end),caption:'图示 '+(rows[0]?.date||'—')+' 至 '+(rows.at(-1)?.date||'—')+'。'+(!isLong(s)&&inCampaign.at(-1)?.date<date(s.end)?' 数据包仅提供活动期部分日序列，活动结束 '+date(s.end)+' 在图示范围外。':'')+(has?' 对照估计沿用原型口径。':' '+e.reason)})+'</section>'+
-  '<div class="cols"><section class="panel pad" id="water"><div class="row spread"><h2>净增量毛利构成</h2>'+badge(e)+'</div>'+waterfall(a,e)+'</section><section class="panel pad" id="stores"><div class="row spread"><h2>门店类型对比</h2>'+badge(e)+'</div><p class="tiny muted">'+(e.label==='证据通过'?'按会员营收降序。':'门店差异待验证 · 按会员营收降序。')+'</p>'+(types.length?table([['门店类型'],['会员营收','num'],['会员订单','num']],types.map(r=>[escape(r.dimension_value),money(r.revenue),fmt(r.orders)])):'<p class="sub">无可用数据。</p>')+(dims.length?'<details class="fold"><summary>查看参与门店</summary>'+table([['门店'],['会员营收','num'],['会员订单','num']],dims.map((r,i)=>['<button data-action="store-detail" data-id="'+id+'" data-index="'+i+'">'+escape(r.dimension_value)+'</button>',money(r.revenue),fmt(r.orders)]))+'</details>':'')+'</section></div>'+
+  '<div class="cols"><section class="panel pad" id="water"><div class="row spread"><h2>净增量毛利构成</h2>'+badge(e)+'</div>'+waterfall(a,e)+'</section><section class="panel pad" id="stores"><div class="row spread"><h2>门店类型对比</h2>'+badge(e)+'</div><p class="tiny muted">'+(e.label==='证据通过'?'按总营收降序。':'门店差异待验证 · 按总营收降序。')+'</p>'+(types.length?table([['门店类型'],['总营收','num'],['总单量','num']],types.map(r=>[escape(r.dimension_value),money(r.revenue),fmt(r.orders)])):'<p class="sub">无可用数据。</p>')+(dims.length?'<details class="fold"><summary>查看参与门店</summary>'+table([['门店'],['总营收','num'],['总单量','num']],dims.map((r,i)=>['<button data-action="store-detail" data-id="'+id+'" data-index="'+i+'">'+escape(r.dimension_value)+'</button>',money(r.revenue),fmt(r.orders)]))+'</details>':'')+'</section></div>'+
   '<section class="panel pad"><h2>次要指标</h2>'+table([['分组'],['指标'],['活动期数值','num'],['对比基准']],support.map(([group,label,value,base])=>[group,label,value,base]))+'<p class="tiny muted">统计期间 '+escape(t.caliber?.campaign_window||date(s.start)+' 至 '+date(s.end))+'</p></section>'+
   '<details class="panel fold"><summary>预算构成与活动档案</summary><p>计划 '+money(a.activity.budget?.planned)+' · 实际 '+money(amount)+'</p><p class="sub">提供总投入，暂无核销让利和媒体费用拆分。</p><p class="sub">'+escape(a.activity.mechanism)+' · '+escape(s.owner)+'</p></details>';
 }
@@ -547,7 +547,7 @@ function report(a,e){
   const doc=storeMode()?{}:load(id);
   const canEdit=!storeMode()&&!doc.finalized;
   const initial=storeMode() ? [
-    store+'活动期会员营收 '+money(storeRow(a)?.revenue)+'，会员订单 '+fmt(storeRow(a)?.orders)+'。',
+    store+'活动期总营收 '+money(storeRow(a)?.revenue)+'，总单量 '+fmt(storeRow(a)?.orders)+'。',
     '门店执行差异待验证。活动证据状态为'+e.label+'。',
     '核对本店发券与核销台账，记录执行时间、异常及客诉。'
   ] : [
@@ -698,7 +698,7 @@ main.addEventListener('click',ev=>{
   if(action==='print'){document.body.classList.add('printing');window.print()}
   if(action==='store-detail'&&!storeMode()){
     const a=activities[id],r=ownRows(a)[Number(index)];
-    if(r)showDialog(escape(r.dimension_value),'<p>'+badge(state(a))+'</p><p class="sub">会员营收 '+money(r.revenue)+' · 会员订单 '+fmt(r.orders)+'</p><p class="sub">门店差异待验证。</p>');
+    if(r)showDialog(escape(r.dimension_value),'<p>'+badge(state(a))+'</p><p class="sub">总营收 '+money(r.revenue)+' · 总单量 '+fmt(r.orders)+'</p><p class="sub">门店差异待验证。</p>');
   }
 });
 window.addEventListener('afterprint',()=>document.body.classList.remove('printing'));

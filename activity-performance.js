@@ -24,7 +24,7 @@ function goalPerformanceIndicators(activity) {
       ['同期会员增加量',count(signups),'全网同期首次注册记录数。工作簿没有销户变动或注册来源与活动的关联，无法归因或计算会员净增。']
     ];
     case '提频': return [
-      ['会员人均订单',buyers>0?fmt(orders/buyers,2):'—','覆盖门店总单量 ÷ 去重消费会员。'],
+      ['会员人均订单',buyers>0?fmt((activity.performance.member_orders??orders)/buyers,2):'—','覆盖门店已识别会员订单量 ÷ 去重消费会员；不含匿名散客。'],
       ['重复购买率',share(repeat_buyers,buyers),'覆盖门店统计期内至少消费两单的去重会员 ÷ 去重消费会员。']
     ];
     case '唤醒': return [
@@ -177,12 +177,12 @@ function renderPerformance(id) {
   const goal=performanceIndicators(a);
   const {revenue,orders,sent,delivered}=a.metrics;
   const general=[
-    ['总营收',numeric(revenue)?fmt(revenue,2)+' HKD':'—','活动窗口内覆盖门店的总单量实收总额。'],
-    ['总单量',numeric(orders)?fmt(orders):'—','活动窗口内覆盖门店的会员交易笔数。'],
+    ['总营收',numeric(revenue)?fmt(revenue,2)+' HKD':'—','活动窗口内覆盖门店的会员与散客实收总额。'],
+    ['总单量',numeric(orders)?fmt(orders):'—','活动窗口内覆盖门店的会员与散客交易笔数。'],
     ['客单价',orders>0?fmt(revenue/orders,2)+' HKD':'—','总营收 ÷ 总单量。'],
     ['活动投入（HKD）',numeric(kpis.cost)?fmt(kpis.cost,2):'—','活动全期总投入。'],
     ['ROI（校准）',numeric(kpis.roi)?pct(kpis.roi):'—',economicsHeaders.roi.help],
-    ['送达 CPM',numeric(kpis.cpm)?fmt(kpis.cpm,2)+' HKD':'—',economicsHeaders.cpm.help]
+    ['广告 CPM',numeric(kpis.cpm)?fmt(kpis.cpm,2)+' HKD':'—',economicsHeaders.cpm.help]
   ];
   const types=a.breakdown.dimensions.store_type.rows;
   const stores=a.breakdown.dimensions.store.rows.slice().sort((x,y)=>y.revenue-x.revenue);
@@ -191,6 +191,7 @@ function renderPerformance(id) {
     escape(selected.name)+'</h2><div class="row performance-actions"><button type="button" class="compact-action accent-action" id="export-performance"><span class="action-symbol" aria-hidden="true">↓</span>导出 Excel</button><a class="compact-action" href="#analysis/compare/'+selected.activity_id+'"><span class="action-symbol" aria-hidden="true">⇄</span>对比分析</a></div></div>'+
     '<p class="sub">'+escape(selected.type)+' · '+escape(selected.goal)+' · '+selected.stores.length+' 家覆盖门店 · '+
     (invalidWindow(selected)?durationLabel(selected):escape(selected.start)+' 至 '+escape(selected.end))+'</p>'+
+    (selected.scenario?'<p class="sub scenario-campaign-note">新增活动方案 · '+escape(selected.target_audience)+' · 计划预算 '+fmt(selected.planned_budget,0)+' HKD。经营数据截至 '+meta.data_cutoff+'；实际投入、ROI 与 CPM 待投放记录补齐。</p>':'')+
     '<div class="routine-metrics">'+performanceCards(general)+'</div></section>'+
     goalFocusPanel(a)+
     '<div class="performance-grid"><section class="panel pad performance-trend"><div class="row spread"><h2>每日经营趋势</h2>'+
@@ -202,7 +203,8 @@ function renderPerformance(id) {
     performanceBars(types.map(row=>[row.dimension_value,row.revenue]),value=>fmt(value,2)+' HKD')+'</section>'+
     '<section class="panel pad"><h2>活动消息送达</h2>'+
     performanceBars(sent>0?[['消息记录',sent],['已送达（含打开及点击）',delivered]]:[],value=>fmt(value)+' 条')+
-    (numeric(kpis.delivery)?'<p><strong>送达率 '+pct(kpis.delivery)+'</strong></p>':'')+'</section></div>'+
+    (numeric(kpis.delivery)?'<p><strong>送达率 '+pct(kpis.delivery)+'</strong></p>':'')+'</section>'+
+    (numeric(a.metrics.ad_impressions)?'<section class="panel pad advertising-performance"><h2>广告投放表现</h2>'+performanceCards([['广告曝光',fmt(a.metrics.ad_impressions),'广告投放表中该活动的曝光量合计。'],['广告点击',fmt(a.metrics.ad_clicks),'广告投放表中该活动的点击量合计。'],['媒体花费',fmt(a.metrics.ad_spend,2)+' HKD','仅付费广告花费；已包含在活动总投入中，不重复加计。'],['点击率',pct(a.metrics.ad_clicks/a.metrics.ad_impressions*100),'广告点击 ÷ 广告曝光 × 100%。']])+'</section>':'')+'</div>'+
     (stores.length?'<details class="panel fold"><summary>查看 '+stores.length+' 家门店明细</summary>'+
     table([['门店'],['总营收（HKD）','num'],['总单量','num']],stores.map(row=>
       [escape(row.dimension_value),fmt(row.revenue,2),fmt(row.orders)]))+'</details>':'')+

@@ -60,7 +60,7 @@ function overviewTrendBody(){
   points.forEach((p,i)=>{if(numeric(p.actual))segment.push(i);else flush()});flush();
   const hasSpend=points.some(p=>numeric(p.baseline));
   const tickIndexes=[...new Set(Array.from({length:Math.min(6,points.length)},(_,i)=>Math.round(i*(points.length-1)/Math.max(1,Math.min(6,points.length)-1))))];
-  return '<div class="trend-key"><span><i></i>会员营收</span>'+(hasSpend?'<span><i class="spend-key"></i>活动投入</span>':'')+
+  return '<div class="trend-key"><span><i></i>总营收</span>'+(hasSpend?'<span><i class="spend-key"></i>活动投入</span>':'')+
     '</div><div class="chart overview-interactive-chart"><div class="tooltip" hidden></div>'+
     '<svg viewBox="0 0 '+w+' '+h+'" aria-label="营收与活动投入趋势" role="group">'+
     '<defs><linearGradient id="overview-revenue-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ac202a" stop-opacity=".14"/><stop offset="1" stop-color="#ac202a" stop-opacity=".015"/></linearGradient></defs>'+
@@ -74,7 +74,7 @@ function overviewTrendBody(){
     tickIndexes.map(i=>'<text x="'+x(i)+'" y="266" text-anchor="middle">'+points[i].date.slice(5)+'</text>').join('')+
     points.map((p,i)=>{
       const label=p.date+(p.end!==p.date?' — '+p.end:' · '+weekdayLabel(p.date));
-      const tip=label+'\n会员营收 '+(numeric(p.actual)?fmt(p.actual,2):'—')+' HKD'+
+      const tip=label+'\n总营收 '+(numeric(p.actual)?fmt(p.actual,2):'—')+' HKD'+
         (hasSpend?'\n活动投入 '+(numeric(p.baseline)?fmt(p.baseline,2):'—')+' HKD':'');
       const width=(r-l)/Math.max(1,points.length-1);
       return '<rect class="overview-hit" tabindex="0" role="button" aria-label="'+escape(tip)+'" data-overview-point="'+i+

@@ -80,7 +80,7 @@ function scratchInfo(item){
   const ids=item.activityIds||[];
   const info=ids.map(id=>{
     const s=activities[id].activity_summary;
-    return s.name+' · '+id+' · '+s.type+' · '+displayDateRange(s.start,s.end);
+    return s.name+' · '+id+' · '+s.type+' · '+displayDateRange(s.start,s.end)+(s.scenario?' · 新增活动方案；门店经营数据截至 '+meta.data_cutoff:'');
   });
   if(!ids.length&&item.scope?.from)info.push(displayDateRange(item.scope.from,item.scope.to)+
     ' · '+(item.scope.store||item.scope.district||'全部门店')+' · '+(item.scope.channel||'全部渠道'));

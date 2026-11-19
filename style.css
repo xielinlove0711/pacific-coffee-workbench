@@ -639,3 +639,5 @@ html[lang=en] .performance-bar-head{flex-wrap:wrap;gap:6px}
 html[lang=en] .brand strong{font-size:17px;letter-spacing:.02em}html[lang=en] .brand small{letter-spacing:.06em;font-size:9px;white-space:nowrap}
 html[lang=en] .comparison-matrix th:first-child{width:29%}html[lang=en] .comparison-matrix td:first-child{min-width:150px}
 @media(max-width:650px){html[lang=en] .routine-metrics .performance-cards{grid-template-columns:repeat(2,minmax(0,1fr))}html[lang=en] .routine-metrics .metric .big{font-size:21px}}
+
+.advertising-performance .performance-cards{grid-template-columns:repeat(2,minmax(0,1fr));margin-top:14px}.advertising-performance .big{font-size:22px!important;white-space:nowrap}.scenario-campaign-note{padding:9px 11px;border-left:2px solid var(--coffee-line);background:var(--bg);font-size:12px;line-height:1.7}

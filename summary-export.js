@@ -33,13 +33,13 @@ function summaryExportSheets(){
   const titles={overview:'数据总览',day:'按日',store:'按门店',activity:'按活动'};
   const view=viewSettings[summaryView];
   const scopeRows=[
-    ['页面',titles[summaryView]],['数据来源','太平洋咖啡 FY2026 v7 (5) 模拟工作簿'],
+    ['页面',titles[summaryView]],['数据来源','太平洋咖啡 FY2026 v9 工作簿'],
     ['开始日期',summaryScope.from],['结束日期',summaryScope.to],
     ['区域',summaryScope.district||'全部'],['门店',summaryScope.store||'全部'],
     ['交易渠道',summaryScope.channel||'全部'],['活动类型',summaryScope.type||'全部'],
     ['排序',(summaryMetricLabels[view.sort]||view.sort)+' · '+(view.direction===1?'升序':'降序')],
     ['金额单位','HKD。空白表示缺数据或不适用。'],
-    ['营收与订单','覆盖工作簿中的会员交易。客单价＝会员营收 ÷ 会员订单量。']
+    ['营收与订单','覆盖工作簿中的会员与散客交易。客单价＝总营收 ÷ 总单量。']
   ];
   if(summaryView==='store')scopeRows.push(['门店类型',view.type||'全部']);
   if(summaryView==='activity'){
@@ -49,7 +49,7 @@ function summaryExportSheets(){
   }
   if(['activity','overview'].includes(summaryView)){
     scopeRows.push(['活动花费','v7 校准表总投入；ROI、CPM 与花费使用活动全期口径。'],
-      ['ROI（校准）',economicsHeaders.roi.help],['送达 CPM',economicsHeaders.cpm.help],['送达率',economicsHeaders.delivery.help]);
+      ['ROI（校准）',economicsHeaders.roi.help],['广告 CPM',economicsHeaders.cpm.help],['送达率',economicsHeaders.delivery.help]);
   }
   if(summaryView==='overview'){
     const start=revenueData.dates.indexOf(summaryScope.from);

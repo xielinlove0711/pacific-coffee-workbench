@@ -12,15 +12,15 @@ function enrichComparison(result,a,b,shopsA,shopsB,daysA,daysB){
   result.comparison={
     names:[a.name,b.name],current,baseline,
     rows:[
-      ['每店每日会员营收','HKD／店日',current.revenuePerDay,baseline.revenuePerDay],
-      ['每店每日会员订单','单／店日',current.ordersPerDay,baseline.ordersPerDay],
-      ['会员客单价','HKD／单',current.basket,baseline.basket],
+      ['每店每日总营收','HKD／店日',current.revenuePerDay,baseline.revenuePerDay],
+      ['每店每日总单量','单／店日',current.ordersPerDay,baseline.ordersPerDay],
+      ['客单价','HKD／单',current.basket,baseline.basket],
       ['覆盖门店','家',current.stores,baseline.stores],
       ['观察天数','天',current.days,baseline.days]
     ],
     conclusions:[
-      '当前活动每店每日会员营收 '+fmt(current.revenuePerDay,2)+' HKD，基准为 '+fmt(baseline.revenuePerDay,2)+' HKD，'+differenceSentence(current.revenuePerDay,baseline.revenuePerDay)+'。',
-      '会员订单频次（每店每日）'+differenceSentence(current.ordersPerDay,baseline.ordersPerDay)+'，客单价'+differenceSentence(current.basket,baseline.basket)+'。',
+      '当前活动每店每日总营收 '+fmt(current.revenuePerDay,2)+' HKD，基准为 '+fmt(baseline.revenuePerDay,2)+' HKD，'+differenceSentence(current.revenuePerDay,baseline.revenuePerDay)+'。',
+      '总单量频次（每店每日）'+differenceSentence(current.ordersPerDay,baseline.ordersPerDay)+'，客单价'+differenceSentence(current.basket,baseline.basket)+'。',
       '两场活动覆盖 '+current.stores+' / '+baseline.stores+' 家门店，观察 '+current.days+' / '+baseline.days+' 天；营收和订单按店日标准化后比较。'
     ]
   };

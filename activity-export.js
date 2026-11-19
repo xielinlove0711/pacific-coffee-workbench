@@ -42,7 +42,7 @@ function performanceCrossPanel(activity){
     '<fieldset class="cross-factors"><legend>勾选分析维度</legend>'+selectableCrossKeys.map(key=>
     '<label><input type="checkbox" data-cross-key="'+key+'" '+(performanceCrossKeys.includes(key)?'checked':'')+
     '> '+crossDimensions[key].label+'</label>').join('')+'</fieldset>'+
-    '<p class="sub">按所选维度组合汇总活动期覆盖门店的会员交易。营收占比以整场活动覆盖范围为分母。</p>'+
+    '<p class="sub">按所选维度组合汇总活动期覆盖门店的会员与散客交易。营收占比以整场活动覆盖范围为分母。</p>'+
     '<div id="performance-cross-results">'+performanceCrossPreview(activity)+'</div></section>';
 }
 
@@ -62,12 +62,12 @@ function activityExportSheets(activity,crossOnly){
   const cross=performanceCrossRows(activity,performanceCrossKeys);
   const dimensions=performanceCrossKeys.map(key=>crossDimensions[key].label);
   const sheets=[['筛选与口径',['项目','内容'],[
-    ['活动',s.name],['编号',s.activity_id],['活动类型',s.type],['活动目标',s.goal],['覆盖门店',s.stores.length],
+    ['活动',s.name],['编号',s.activity_id],['活动类型',s.type],['活动目标',s.goal],['覆盖门店',s.stores.length],['活动来源',s.scenario?'新增活动方案':'v9 活动主表'],['目标人群',s.target_audience||'—'],['计划预算（HKD）',s.planned_budget??null],['数据截止',meta.data_cutoff||'2026-10-31'],
     ['档期',s.start+' 至 '+s.end+(invalidWindow(s)?'（日期倒挂）':'')],
     ['数据来源','FY2026 v7 (5) 模拟工作簿'],['交叉维度',dimensions.join(' × ')||'未选择'],
-    ['营收与订单','活动期覆盖门店的会员交易。各交叉组按其维度组合汇总，未记录交易的组合不列出。'],
+    ['营收与订单','活动期覆盖门店的会员与散客交易。各交叉组按其维度组合汇总，未记录交易的组合不列出。'],
     ['客单价与营收占比','客单价＝总营收 ÷ 总单量；营收占比＝分组营收 ÷ 全活动覆盖门店总营收。'],
-    ['ROI（校准）',economicsHeaders.roi.help],['送达 CPM',economicsHeaders.cpm.help],
+    ['ROI（校准）',economicsHeaders.roi.help],['广告 CPM',economicsHeaders.cpm.help],
     ['缺数','空白代表未观测到数据或指标不适用。观察结果可能包含同期活动影响。']
   ]]];
   if(!crossOnly){
@@ -83,7 +83,7 @@ function activityExportSheets(activity,crossOnly){
         ['总营收',m.revenue,'HKD'],['总单量',m.orders,'单'],
         ['客单价',m.orders>0?m.revenue/m.orders:null,'HKD／单'],
         ['总投入',kpis.cost,'HKD，来自校准表'],['ROI（校准）',kpis.roi,economicsHeaders.roi.help],
-        ['送达 CPM',kpis.cpm,economicsHeaders.cpm.help]]],
+        ['广告 CPM',kpis.cpm,economicsHeaders.cpm.help]]],
       ['目标效果',['指标','数值','计算口径'],goal],
       ['每日经营',['日期','星期','总营收（HKD）','总单量','客单价（HKD）'],
         activity.trend.series.revenue.map(point=>{
@@ -93,11 +93,12 @@ function activityExportSheets(activity,crossOnly){
       ['门店类型',['门店类型',...crossMetricHeaders.slice(0,3)],storeRows('store_type')],
       ['门店明细',['门店',...crossMetricHeaders.slice(0,3)],storeRows('store')],
       ['消息触达',['指标','数值','计算口径'],[
-        ['消息记录',m.sent,'v7 messages 中对应活动的消息记录数。'],
+        ['消息记录',m.sent,'v9 触达明细 中对应活动的消息记录数。'],
         ['送达记录',m.sent>0?m.delivered:null,'计入 delivered、opened、clicked 状态。'],
         ['送达率（%）',kpis.delivery,economicsHeaders.delivery.help]]]
     );
   }
+  if(!crossOnly&&numeric(m.ad_impressions))sheets.push(['广告投放',['指标','数值','单位'],[['广告曝光',m.ad_impressions,'次'],['广告点击',m.ad_clicks,'次'],['媒体花费',m.ad_spend,'HKD'],['广告 CPM',m.ad_cpm,'HKD'],['点击率',m.ad_clicks/m.ad_impressions*100,'%']]]);
   if(dimensions.length)sheets.push(['交叉分析',[...dimensions,...crossMetricHeaders],cross]);
   return sheets;
 }
