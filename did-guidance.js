@@ -18,22 +18,12 @@ function didReadiness(activity,preDays=Number(analysisForm.pre)){
 }
 
 function didGuidePanel(activity){
-  const rows=comparisonActivities();
-  const selected=activity?didReadiness(activity):null;
-  return '<section class="panel pad did-guide"><details><summary>ⓘ 对照组与 DID 是什么？活动前要准备什么？</summary>'+
-    '<p>DID（双重差分）＝处理组活动前后变化 − 对照组同期变化，用于估计扣除共同变化后的活动差异。</p>'+
-    '<p>Holdout 是预先随机留出的一组会员。本页标记来自活动档案的设计记录；会员随机实验需要会员分组名单及两组交易，门店 DID 使用门店组别。</p>'+
-    '<p>「可运行」表示名单和时间窗口齐备。平行趋势、同期促销、缺货闭店、跨组污染仍需复核；前趋势没有明显差异也无法单独证明归因成立。</p>'+
-    '<ol><li>投放前确定主指标、分析单位、前后窗口及可检测的最小效果，用样本量测算决定留出规模。</li>'+
-    '<li>冻结处理／对照名单，记录分组规则和投放例外。两组都保留前后交易及营业状态，不能只留核销用户。</li>'+
-    '<li>协调同期活动与跨店触达，记录污染、闭店和缺货；保留数据截止日期和活动配置版本。</li></ol></details>'+
-    (selected?'<div class="did-selected"><strong>'+escape(activity.name)+' · '+escape(selected.label)+'</strong>'+
-      '<p class="sub">'+(selected.holdout?'有 Holdout 设计记录 · ':'')+activity.stores.length+' 家处理门店 / '+selected.control.length+' 家对照门店</p>'+
-      (selected.issues.length?table([['当前缺口'],['上线前如何准备']],selected.issues.map(row=>row.map(escape))):
-        '<p class="sub">可运行前趋势诊断和探索性 DID，正式结论仍需复核。</p>')+'</div>':'')+
-    '<details><summary>查看全部活动的 Holdout 与可用性</summary>'+
-    table([['活动'],['分组记录'],['当前可用性']],rows.map(s=>{
-      const state=didReadiness(s);
-      return [escape(s.name),state.holdout?'有 Holdout 设计记录':state.control.length?'门店级对照':'未设对照',escape(state.label)];
-    }))+'</details></section>';
+  if(!activity)return '';
+  const selected=didReadiness(activity);
+  return '<section class="panel pad did-guide"><div class="did-selected"><strong>'+
+    escape(activity.name)+' · '+escape(selected.label)+'</strong>'+
+    '<p class="sub">'+(selected.holdout?'有 Holdout 设计记录 · ':'')+activity.stores.length+' 家处理门店 / '+
+    selected.control.length+' 家对照门店</p>'+
+    (selected.issues.length?table([['当前缺口'],['上线前如何准备']],selected.issues.map(row=>row.map(escape))):
+      '<p class="sub">可运行前趋势诊断和探索性评估，正式结论仍需复核。</p>')+'</div></section>';
 }

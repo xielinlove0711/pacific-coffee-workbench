@@ -1,6 +1,6 @@
 'use strict';
 
-const methodsList = {period:'同期对比', general:'普通活动对比', peer:'同类型活动对比', did:'对照组与 DID'};
+const methodsList = {period:'同期对比', general:'普通活动对比', peer:'同类型活动对比', did:'增量效果评估'};
 const analysisForm = {method:'period', activity:'', peer:'', periodActivity:'', periodPeer:'', periodMonth:'', referenceMonth:'', pre:28, margin:'68', metric:'revenue', district:'', store:'', channel:''};
 let currentRuns = [];
 let runsRole;
@@ -31,19 +31,20 @@ function summaryFilters(shops) {
 }
 
 function permanentMetrics(s) {
-  if(storeMode())return [['覆盖门店',escape(store)]];
-  const {sent,delivery}=activities[s.activity_id].metrics;
-  return [['覆盖门店',s.stores.length?fmt(s.stores.length)+' 家':'—'],
-    ['触达记录',sent?fmt(sent)+' 条':'—'],['送达率',pct(delivery)]];
+  const known=new Set(revenueData.stores.map(shop=>shop.name));
+  const covered=new Set(s.stores.filter(name=>known.has(name)));
+  return [['覆盖门店',covered.size?fmt(covered.size)+' 家':'—'],
+    ['门店覆盖率',known.size?pct(covered.size/known.size*100):'—']];
 }
 
 function permanentPanel(rows,title,open=false) {
-  const labels=storeMode()?['覆盖门店']:['覆盖门店','触达记录','送达率'];
   return '<details class="campaign-group permanent-panel" '+(open?'open':'')+'><summary><strong>'+title+
     '</strong><span class="tiny muted">'+rows.length+' 场</span></summary>'+
-    (rows.length?table([['活动'],['渠道'],...labels.map(label=>[label]),['操作']],rows.map(s=>[
-      link(s.activity_id,'overview',escape(s.name),'campaign'),escape(s.channels.join('、')),
-      ...permanentMetrics(s).map(([,value])=>value),link(s.activity_id,'overview','查看详情 →','entry')
+    (rows.length?table([['活动'],['活动类型'],['渠道'],['覆盖门店'],
+      [metricHelpLabel('门店覆盖率','参与门店数 ÷ 门店主数据中的全部门店数 × 100%。')],['活动机制'],['操作']],rows.map(s=>[
+      link(s.activity_id,'overview',escape(s.name),'campaign'),escape(s.type||'未分类'),escape(s.channels.join('、')),
+      ...permanentMetrics(s).map(([,value])=>value),escape(activities[s.activity_id].activity.mechanism||'—'),
+      link(s.activity_id,'overview','查看详情 →','entry')
     ])):'<p class="campaign-empty muted">没有匹配活动。</p>')+'</details>';
 }
 
@@ -59,7 +60,7 @@ function activityEconomics(s) {
 }
 
 function economicsTable(rows) {
-  return table([['活动'],['活动类型'],['总投入（港元）','num'],['校准净增量毛利（港元）','num'],
+  return table([['活动'],['活动类型'],['总投入（HKD）','num'],['校准净增量毛利（HKD）','num'],
     [economicsHeader('roi'),'num'],['送达记录','num'],[economicsHeader('delivery'),'num'],[economicsHeader('cpm'),'num'],['操作']],
     rows.map(s=>{
       const m=activityEconomics(s);
@@ -75,10 +76,10 @@ function economicsTable(rows) {
 const economicsHeaders = {
   roi:{
     label:'ROI（校准）',
-    help:'（校准净增量毛利 − 总投入）÷ 总投入 × 100%。毛利和投入取自 v7 活动预算与效果校准表；原表「净 ROI」为回收倍数。投入缺失、为零或缺毛利时显示「—」。'
+    help:'（校准净增量毛利 − 总投入）÷ 总投入 × 100%。毛利和投入取自 活动预算与效果校准表；原表「净 ROI」为回收倍数。投入缺失、为零或缺毛利时显示「—」。'
   },
   cpm:{
-    label:'送达 CPM（港元）',
+    label:'送达 CPM（HKD）',
     help:'活动总投入 ÷ 送达记录 × 1,000。送达记录包括 delivered、opened、clicked。投入缺失或送达记录为零时显示「—」。工作簿缺少广告曝光和独立媒体花费，广告 CPM 暂缺。'
   },
   delivery:{
@@ -104,13 +105,12 @@ function overviewCampaignTable() {
   const sorted=sortMetricRows(rows.map(s=>({...activityEconomics(s),activity:s,duration:campaignDays(s)})),view);
   const matching=sorted.filter(r=>!isLong(r.activity)).map(r=>r.activity);
   const permanent=sorted.filter(r=>isLong(r.activity)).map(r=>r.activity);
-  return '<section class="panel pad seasonal-panel"><div class="row spread"><h2>活动效果与计算口径</h2>'+
+  return '<section class="panel pad seasonal-panel"><div class="row spread"><h2>活动效果</h2>'+
     '<a href="#summary/activity">按活动查看 →</a>'+'</div>'+
     '<p class="sub">指标使用各活动的全量投入、校准毛利及消息记录。日期、区域、门店和渠道筛选不拆分这些指标。</p>'+
     '<div class="toolbar metric-toolbar">'+controls+'</div>'+
     (matching.length?economicsTable(matching):'<p class="muted">筛选范围内没有非常设活动。</p>')+
-    '<details class="campaign-group permanent-panel"><summary><strong>常设活动指标</strong><span class="tiny muted">'+permanent.length+' 场</span></summary>'+
-    (permanent.length?economicsTable(permanent):'<p class="muted">筛选范围内没有常设活动。</p>')+'</details></section>';
+    permanentPanel(permanent,'常设活动')+'</section>';
 }
 
 const comparisonActivities=()=>visible().filter(a=>!isLong(a));
@@ -163,7 +163,7 @@ function periodFields(f, activityOptions) {
   };
   return '<div class="period-pickers">'+picker('periodMonth','periodActivity','当前时期')+
     picker('referenceMonth','periodPeer','对比时期')+'</div>'+
-    '<p class="sub period-note">可比较跨年同月，或同年同月／相近月份的两场活动。v7 数据覆盖 '+
+    '<p class="sub period-note">可比较跨年同月，或同年同月／相近月份的两场活动。数据覆盖 '+
     revenueData.dates[0].slice(0,7)+' 至 '+revenueData.dates.at(-1).slice(0,7)+'。</p>';
 }
 
@@ -208,7 +208,7 @@ function renderAnalysis(id) {
   main.innerHTML=head('对比分析','选择基准和指标。每次运行可单独保存到报告。')+
     '<div class="method-grid">'+Object.entries(methodsList).map(([key,label])=>
       '<button class="panel method-choice '+(key===f.method?'active':'')+'" data-work="method" data-value="'+key+'" aria-pressed="'+(key===f.method)+'"><strong>'+label+(key==='did'?'<span class="did-question" data-metric-help="'+escape('DID（双重差分）用处理组活动前后的变化，减去对照组同期的变化，估计活动差异。本页仅允许选择有 Holdout 设计记录的活动。Holdout 是投放前预先留出的对照人群；还需保存分组名单及两组前后交易，并复核平行趋势和同期活动。有设计记录但缺少明细时需补数据才能运行。')+'" aria-hidden="true">?</span>':'')+'</strong><small>'+
-      {period:'跨年同月或同年同期的活动对比',general:'任选两场非常设活动',peer:'按活动开始后的相同天数比较',did:'查看前趋势与前后双差'}[key]+'</small></button>').join('')+'</div>'+
+      {period:'跨年同月或同年同期的活动对比',general:'任选两场非常设活动',peer:'按活动开始后的相同天数比较',did:'评估活动带来的额外增长'}[key]+'</small></button>').join('')+'</div>'+
     (isDid?didGuidePanel(chosen):'')+
     '<section class="panel toolbar work-fields">'+
     (f.method==='period'?periodFields(f,activityOptions):
@@ -249,8 +249,8 @@ function comparisonEconomics(result,activity,group,days) {
     revenue,gross,margin,cost:allocated,roi,stores:group.length,days,
     note:!fullScope?'筛选范围缺少对应投入拆分，暂不计算 ROI。':
       !numeric(allocated)?'活动投入缺失或为零，暂不计算 ROI。':
-      days<fullDays?'窗口投入按天均摊估算：'+fmt(cost,2)+' 港元全期总投入 × '+days+' ÷ '+fullDays+' 天。':
-      '投入取自 v7 校准表的活动总投入。'
+      days<fullDays?'窗口投入按天均摊估算：'+fmt(cost,2)+' HKD全期总投入 × '+days+' ÷ '+fullDays+' 天。':
+      '投入取自 校准表的活动总投入。'
   };
 }
 
@@ -258,9 +258,9 @@ function economicsText(r){
   const x=r.economics;
   if(!x)return r.economicsNote||'';
   const context=r.method==='did'?'DID 增量情景':'相对基准情景';
-  return context+'｜营收差额 '+fmt(x.revenue,2)+' 港元（每店每日营收差 × '+x.stores+' 家 × '+x.days+
-    ' 天）；毛利差额 '+fmt(x.gross,2)+' 港元（营收差额 × '+fmt(x.margin,1)+'% 假设毛利率）；情景 ROI '+
-    (numeric(x.roi)?pct(x.roi)+'（毛利差额 − '+fmt(x.cost,2)+' 港元投入）÷ 投入 × 100%。':'—。')+
+  return context+'｜营收差额 '+fmt(x.revenue,2)+' HKD（每店每日营收差 × '+x.stores+' 家 × '+x.days+
+    ' 天）；毛利差额 '+fmt(x.gross,2)+' HKD（营收差额 × '+fmt(x.margin,1)+'% 假设毛利率）；情景 ROI '+
+    (numeric(x.roi)?pct(x.roi)+'（毛利差额 − '+fmt(x.cost,2)+' HKD投入）÷ 投入 × 100%。':'—。')+
     x.note+' 默认 68% 为工作簿校准示例假设，可调整。情景估算需核实成本口径及折让是否已计入；活动间差异仅作基准观察。';
 }
 
@@ -272,12 +272,12 @@ function calculate(onlyPre) {
   if(activityId&&!a)throw Error('请选择可对比的非常设活动。');
   const shops=(names, scoped=true)=>availableStores().filter(s=>(!names||names.includes(s.name))&&
     (!scoped||((!f.store||s.name===f.store)&&(!f.district||s.district===f.district))));
-  const unit=f.metric==='orders'?'单':'港元';
+  const unit=f.metric==='orders'?'单':'HKD';
   const total=xs=>xs.reduce((sum,x)=>sum+x,0);
   const avg=xs=>total(xs)/xs.length;
   const groupA=shops(a?.stores,f.method!=='did');
   const take=(group,days,normalize)=>sample(group,days,f.metric,f.channel,normalize);
-  const result={title:methodsList[f.method],source:'FY2026 v7 · '+(f.channel||'全部交易渠道'),unit,method:f.method};
+  const result={title:methodsList[f.method],source:'会员交易 · '+(f.channel||'全部交易渠道'),unit,method:f.method};
   let days, first, second;
   if(f.method==='did'&&a){
     const eligibility=didReadiness(a);
@@ -396,7 +396,7 @@ function calculate(onlyPre) {
     result.labels=['处理组','对照组'];
     result.unit=unit+'/店日';
     result.start=a.start;
-    result.title=onlyPre?'平行趋势诊断':'对照组与 DID';
+    result.title=onlyPre?'平行趋势诊断':'增量效果评估';
     result.note='探索性结果。活动前差值的变化用于检查趋势偏离；需复核同期活动、营业变化及组间污染。';
     result.diagnostics=[['前窗均值 '+result.labels[0],avg(first.slice(0,pre.length))],['前窗均值 '+result.labels[1],avg(second.slice(0,pre.length))],['前窗后半段与前半段的组间差值变化',gapChange]];
     if(!onlyPre){
@@ -430,26 +430,27 @@ function resultSummary(r) {
 }
 
 function evidenceHTML(r) {
+  if(r.snapshotHTML)return '<article class="panel pad evidence-card"><h3>'+escape(r.title)+'</h3>'+r.snapshotHTML+
+    (r.note?'<p class="preserve" data-language-original>'+escape(r.note)+'</p>':'')+'</article>';
   return '<article class="panel pad evidence-card"><h3>'+escape(r.title)+'</h3><p class="sub">'+escape(r.detail)+' · '+escape(r.source)+'</p>'+
     (r.points.length?chart(r.points,{heading:escape(r.title),unit:escape(r.unit),first:r.labels[0],second:r.labels[1]||'',start:r.start}):'')+
     (r.warnings?.length?'<details class="fold"><summary>活动期间与门店范围提示</summary><ul>'+r.warnings.map(text=>'<li>'+escape(text)+'</li>').join('')+'</ul></details>':'')+
     comparisonReportHTML(r)+
-    (r.comparison?'<details class="fold"><summary>主指标差异与计算口径</summary><p>'+escape(resultSummary(r))+'</p></details>':'<p><strong>'+escape(resultSummary(r))+'</strong></p>')+
+    (!r.comparison?'<p><strong>'+escape(resultSummary(r).split('。计算口径：')[0])+'</strong></p>':'')+
     (!r.comparison&&r.diagnostics?table([['指标'],[['did','period','general'].includes(r.method)?escape(r.unit):'数值','num']],r.diagnostics.map(([label,value])=>[escape(label),fmt(value,2)])):'')+
-    '<p class="sub">'+escape(r.note)+'</p>'+
-    (economicsText(r)?'<div class="notice">'+escape(economicsText(r))+'</div>':'')+'</article>';
+    (!r.comparison?'<p class="sub">'+escape(r.note)+'</p>':'')+'</article>';
 }
 
 function showResult() {
   const output=main.querySelector('#analysis-output');
-  if(lastResult) output.innerHTML=evidenceHTML(lastResult)+'<div class="row toolbar"><button data-work="save-run">保存结果</button><button data-work="send-run">将结论和图表加入报告</button></div>';
+  if(lastResult) output.innerHTML=evidenceHTML(lastResult)+'<div class="row toolbar"><button data-work="save-run">保存结果</button><button data-work="send-run">加入素材草稿纸</button></div>';
   main.querySelector('#run-list').innerHTML=currentRuns.length?currentRuns.map((r,i)=>'<div class="row run-row"><span>'+escape(r.title+' · '+r.detail)+'</span><button data-work="view-run" data-value="'+i+'">打开</button></div>').join(''):'<p class="sub">运行比较后可保存到当前浏览器。</p>';
 }
 
 function scopeSnapshot(activity) {
   if(activity&&isLong(activity)){
     return {title:activity.name+'｜常设活动概况',detail:activity.type+' · '+activity.channels.join('、'),
-      source:'FY2026 v7',unit:'',labels:[],points:[],
+      source:'会员交易',unit:'',labels:[],points:[],
       summary:permanentMetrics(activity).map(([key,value])=>key+' '+value).join('；'),
       note:activities[activity.activity_id].activity.mechanism};
   }
@@ -458,11 +459,11 @@ function scopeSnapshot(activity) {
   const channel=activity?'':summaryScope.channel;
   const values=sample(shops,days,'revenue',channel);
   const orders=sample(shops,days,'orders',channel);
-  const source='FY2026 v7 · '+(channel||'全部交易渠道');
+  const source='会员交易 · '+(channel||'全部交易渠道');
   const points=days.map((date,i)=>({date,actual:orders[i]?values[i]:null,baseline:null}));
   return {title:activity?activity.name+'｜会员营收与订单':'会员营收与订单',detail:(days.length?days[0]+' 至 '+days.at(-1):'无有效活动窗口')+' · '+(activity?shops.length+' 家范围内门店':summaryScope.store||summaryScope.district|| (storeMode()?store:'全部门店')),
-    source,unit:'港元',labels:['会员营收'],points,
-    diagnostics:[['区间会员营收（港元）',values.reduce((sum,n)=>sum+n,0)],['会员订单（单）',orders.reduce((sum,n)=>sum+n,0)]],
+    source,unit:'HKD',labels:['会员营收'],points,
+    diagnostics:[['区间会员营收（HKD）',values.reduce((sum,n)=>sum+n,0)],['会员订单（单）',orders.reduce((sum,n)=>sum+n,0)]],
     note:'覆盖所选门店的会员交易。无交易记录的日期留空，营业状态待核。'};
 }
 
@@ -496,22 +497,24 @@ function renderWorkspace(preview=false) {
     '<section class="panel toolbar no-print"><button data-work="preview" data-value="'+(!preview)+'">'+(preview?'返回编辑':'预览报告')+'</button>'+
     '<button data-work="pdf">打印 / 导出 PDF</button><button data-work="word">导出 Word</button><span id="workspace-status" role="status" class="sub"></span></section>'+
     '<div class="workspace-grid">'+
-    '<aside class="panel pad no-print"><h2>报告素材</h2>'+
+    '<aside class="panel pad no-print"><div class="row spread"><h2>引用素材</h2><button class="compact-action" data-scratch="open">调用草稿纸</button></div>'+
     (draft.evidence.length?draft.evidence.map((r,i)=>'<div class="asset"><strong>'+escape(r.title)+'</strong><small>'+escape(r.detail)+'</small><button data-work="remove-evidence" data-value="'+i+'">移除</button></div>').join(''):'<p class="sub">从总览或对比分析加入素材。</p>')+
     '<a href="#analysis/compare">打开对比分析 →</a></aside>'+
-    '<article class="report panel pad workspace-paper">'+
-    (preview?'<h2 data-language-original>'+escape(draft.title)+'</h2><p class="preserve" data-language-original>'+escape(draft.text)+'</p>':
+    '<div class="report-main-column"><article class="report panel pad workspace-paper">'+
+    (preview?'<h2 data-language-original>'+escape(draft.title)+'</h2><div class="report-rich-content" data-language-original>'+reportDocumentHTML(draft,true)+'</div>':
       '<label class="editor-field">报告标题<input data-draft="title" value="'+escape(draft.title)+'"></label>'+
-      '<label class="editor-field">报告正文<textarea data-draft="text" placeholder="写下活动表现、对比发现与下一步行动">'+escape(draft.text)+'</textarea></label>'+
-      '<div class="print-value"><h2 id="print-title" data-language-original>'+escape(draft.title)+'</h2><p id="print-text" class="preserve" data-language-original>'+escape(draft.text)+'</p></div>')+
-    draft.evidence.map(evidenceHTML).join('')+'<footer>数据来源：太平洋咖啡 FY2026 v7 · 会员交易</footer></article>'+
-    '<aside class="panel pad no-print"><h2>撰写助手</h2><p class="sub">根据报告素材生成可编辑的复盘段落。</p>'+
-    '<div class="assist-buttons"><button data-work="generate">生成数据摘要</button><button data-work="ai">用本机 AI 起草</button></div>'+
-    '<p id="draft-suggestion" class="preserve" aria-live="polite"></p><button id="insert-suggestion" data-work="insert" hidden>追加到正文</button></aside></div>';
+      reportEditorHTML(draft)+
+      '<div class="print-value"><h2 id="print-title" data-language-original>'+escape(draft.title)+'</h2><div id="print-text" class="report-rich-content" data-language-original>'+reportDocumentHTML(draft,true)+'</div></div>')+
+    '<footer>数据来源：太平洋咖啡 · 会员交易</footer></article>'+
+    '<div class="report-ai-launch no-print"><button type="button" class="compact-action accent-action" data-work="toggle-ai" aria-expanded="false" aria-controls="report-ai-panel">AI报告助手</button></div>'+
+    '<section id="report-ai-panel" class="panel pad no-print" hidden><p class="sub">根据报告素材生成可编辑的复盘段落。</p>'+
+    '<div class="assist-buttons"><button data-work="generate">AI数据总结</button><button data-work="ai">AI帮写</button></div>'+
+    '<p id="draft-suggestion" class="preserve" aria-live="polite"></p><button id="insert-suggestion" data-work="insert" hidden>追加到正文</button></section></div></div>';
+  void prepareReportImages(draft);
 }
 
 function draftEvidenceText() {
-  return workspaceDraft().evidence.map(r=>r.title+'｜'+r.detail+'\n'+comparisonConclusionText(r)+'\n'+resultSummary(r)+'\n'+r.note+'\n'+economicsText(r)).join('\n\n');
+  return workspaceDraft().evidence.map(r=>r.title+'｜'+r.detail+'\n'+comparisonConclusionText(r)+'\n'+resultSummary(r)+(r.comparison?'':'\n'+r.note)).join('\n\n');
 }
 
 async function suggest(useAI) {
@@ -605,23 +608,38 @@ function downloadWord(draft) {
     '_rels/.rels':xmlHeader+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
   };
   const relations=[];
-  const evidence=draft.evidence.map((result,index)=>{
-    const id=index+1;
-    let figure='';
-    if(result.points.some(p=>numeric(p.actual)||numeric(p.baseline))){
-      files['word/media/trend'+id+'.png']=trendPng(result);
-      relations.push('<Relationship Id="rId'+id+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/trend'+id+'.png"/>');
-      figure=image(id,result.title);
+  const documentHost=document.createElement('div');documentHost.innerHTML=reportDocumentHTML(draft,true);
+  let figureNumber=0;
+  const renderWordNode=node=>{
+    if(node.nodeType===3)return node.textContent.trim()?paragraph(node.textContent):'';
+    if(node.matches('[data-report-row]')){
+      const cells=[...node.querySelectorAll('figure')].map(figure=>{
+        const img=figure.querySelector('img');if(!img)return '';
+        const id=++figureNumber,title=img.alt||'';
+        files['word/media/trend'+id+'.png']=Uint8Array.from(atob(img.src.split(',')[1]),c=>c.charCodeAt(0));
+        relations.push('<Relationship Id="rId'+id+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/trend'+id+'.png"/>');
+        const width=parseFloat(figure.style.getPropertyValue('--image-width'))||100;
+        const px=Number(img.getAttribute('width'))||900;
+        const bytes=files['word/media/trend'+id+'.png'];
+        const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+        const ratio=bytes.length>24?view.getUint32(20)/view.getUint32(16):.4;
+        const cx=Math.round(5300000*width/100),cy=Math.round(cx*ratio);
+        const drawing=image(id,title).replaceAll('5300000',String(cx)).replaceAll('1643000',String(cy));
+        const caption=figure.querySelector('.image-remark-text')?.textContent||'';
+        return '<w:tc><w:tcPr><w:tcW w:w="'+Math.round(8300*width/100)+'" w:type="dxa"/></w:tcPr>'+paragraph(title,true)+drawing+(caption?paragraph(caption):'')+'</w:tc>';
+      }).join('');
+      return '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tr>'+cells+'</w:tr></w:tbl>';
     }
-    return paragraph(result.title,true)+paragraph(result.detail+' · '+result.source)+
-      paragraph(comparisonConclusionText(result))+paragraph(resultSummary(result))+figure+paragraph(result.note)+(economicsText(result)?paragraph(economicsText(result)):'');
-  }).join('');
+    if(node.matches('p,h1,h2,h3,li,blockquote'))return paragraph(node.textContent,node.matches('h1,h2,h3'));
+    return [...node.childNodes].map(renderWordNode).join('');
+  };
+  const evidence=[...documentHost.childNodes].map(renderWordNode).join('');
   files['word/_rels/document.xml.rels']=xmlHeader+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+relations.join('')+'</Relationships>';
   files['word/document.xml']=xmlHeader+'<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '+
     'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '+
     'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'+
-    '<w:body>'+paragraph(draft.title,true)+draft.text.split('\n').map(text=>paragraph(text)).join('')+evidence+
-    paragraph('数据来源：太平洋咖啡 FY2026 v7 · 会员交易')+'</w:body></w:document>';
+    '<w:body>'+paragraph(draft.title,true)+evidence+
+    paragraph('数据来源：太平洋咖啡 · 会员交易')+'</w:body></w:document>';
   const href=URL.createObjectURL(new Blob(zipDocument(files),{type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}));
   const link=document.createElement('a');
   link.href=href;
@@ -709,16 +727,24 @@ document.addEventListener('click',event=>{
       catch{button.textContent='本次会话已保存'}
       break;
     case 'view-run': lastResult=currentRuns[Number(value)];showResult();break;
-    case 'send-run': includeEvidence(lastResult); break;
+    case 'send-run': scratchEvidence(lastResult); break;
     case 'remove-evidence':
       workspaceDraft().evidence.splice(Number(value),1);
       saveWorkspace();
       renderWorkspace();
       break;
+    case 'toggle-ai': {
+      const panel=main.querySelector('#report-ai-panel');
+      panel.hidden=!panel.hidden;
+      button.setAttribute('aria-expanded',String(!panel.hidden));
+      break;
+    }
     case 'preview': renderWorkspace(value==='true'); break;
     case 'generate': case 'ai': void suggest(work==='ai'); break;
     case 'insert':
-      workspaceDraft().text=[workspaceDraft().text,main.querySelector('#draft-suggestion').textContent].filter(Boolean).join('\n\n');
+      rememberReportChange();
+      workspaceDraft().bodyHTML=reportBodyHTML(workspaceDraft())+reportBodyHTML({text:main.querySelector('#draft-suggestion').textContent});
+      workspaceDraft().text=reportPlainText(workspaceDraft().bodyHTML);
       saveWorkspace();
       renderWorkspace();
       break;

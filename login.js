@@ -40,6 +40,8 @@ loginForm.addEventListener('submit',event=>{
   loginStatus.hidden=true;
   try{sessionStorage.setItem(sessionKey,name)}catch{}
   updateLoginView(name);
+  applyPersonalSettings();
+  updateScratchCount();
   logoutButton.focus();
 });
 

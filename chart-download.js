@@ -7,6 +7,7 @@ async function chartCanvas(target){
   const svg=target.querySelector('svg');
   if(svg){
     const copy=svg.cloneNode(true);
+    copy.querySelectorAll('.overview-hit,.overview-crosshair').forEach(node=>node.remove());
     copy.querySelectorAll('*').forEach(node=>{
       for(const attribute of ['stroke','fill']){
         const value=node.getAttribute(attribute);

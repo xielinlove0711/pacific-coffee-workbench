@@ -3,9 +3,9 @@
 function performanceIndicators(activity) {
   const rows=goalPerformanceIndicators(activity);
   const {reported_new_members,new_members_reached,first_orders_7d}=activity.performance||{};
-  if(numeric(reported_new_members))rows.push(['窗口内新会员（活动主表）',fmt(reported_new_members),'取自 v7 (5) 活动主表。']);
+  if(numeric(reported_new_members))rows.push(['窗口内新会员（活动主表）',fmt(reported_new_members),'取自 活动主表。']);
   if(numeric(new_members_reached))rows.push(
-    ['触达新会员',fmt(new_members_reached),'取自 v7 (5) 活动预算与效果校准表的新会员触达转化记录。'],
+    ['触达新会员',fmt(new_members_reached),'取自 活动预算与效果校准表的新会员触达转化记录。'],
     ['触后 7 天首单',fmt(first_orders_7d),'按工作簿记录，触达后 7 天内首次下单的新会员数。'],
     ['触后 7 天首单转化率',new_members_reached>0?pct(first_orders_7d/new_members_reached*100):'—','触后 7 天首单人数 ÷ 触达新会员人数。']
   );
@@ -21,10 +21,10 @@ function goalPerformanceIndicators(activity) {
     case '拉新': return [
       ['新客占比',share(new_buyers,buyers_with_signup),'活动覆盖门店内，统计期注册且有消费的去重会员 ÷ 同期有注册日期的去重消费会员。'],
       ['覆盖门店新注册消费会员',count(new_buyers),'注册与消费均落在统计期，且在覆盖门店有消费的去重会员。'],
-      ['同期会员增加量（全网）',count(signups),'全网同期首次注册记录数。工作簿没有销户变动或注册来源与活动的关联，无法归因或计算会员净增。']
+      ['同期会员增加量',count(signups),'全网同期首次注册记录数。工作簿没有销户变动或注册来源与活动的关联，无法归因或计算会员净增。']
     ];
     case '提频': return [
-      ['会员人均订单',buyers>0?fmt(orders/buyers,2):'—','覆盖门店会员订单量 ÷ 去重消费会员。'],
+      ['会员人均订单',buyers>0?fmt(orders/buyers,2):'—','覆盖门店总单量 ÷ 去重消费会员。'],
       ['重复购买率',share(repeat_buyers,buyers),'覆盖门店统计期内至少消费两单的去重会员 ÷ 去重消费会员。']
     ];
     case '唤醒': return [
@@ -32,8 +32,8 @@ function goalPerformanceIndicators(activity) {
       ['沉默回购者占比',share(dormant_returners,buyers),'历史沉默回购会员 ÷ 覆盖门店去重消费会员。属于消费观察。']
     ];
     case '推新品': return [
-      ['新品营收','—','覆盖门店内目标新品的订单行实收金额之和。v7 缺活动与目标 SKU 映射及商品行实收金额。'],
-      ['新品订单渗透率','—','含目标新品的订单数 ÷ 同期覆盖门店会员订单数。v7 缺活动与目标 SKU 映射。']
+      ['新品营收','—','覆盖门店内目标新品的订单行实收金额之和。缺活动与目标 SKU 映射及商品行实收金额。'],
+      ['新品订单渗透率','—','含目标新品的订单数 ÷ 同期覆盖门店总单量数。缺活动与目标 SKU 映射。']
     ];
     default: return [];
   }
@@ -69,18 +69,18 @@ function performanceTrend(activity,key){
     for(const [index,,count] of shop.days)orders.set(dates[index],(orders.get(dates[index])||0)+count);
   }
   const isRevenue=key==='revenue';
-  const title=isRevenue?'会员营收':key==='orders'?'会员订单量':'会员客单价';
+  const title=isRevenue?'总营收':key==='orders'?'总单量':'客单价';
   const points=activity.trend.series.revenue.map(point=>{
     const count=orders.get(point.date);
     const value=isRevenue?point.actual:key==='orders'?(numeric(point.actual)?count||0:null):
       count>0&&numeric(point.actual)?point.actual/count:null;
     return {date:point.date,actual:value,baseline:null};
   });
-  return chart(points,{heading:'每日'+title,unit:key==='orders'?'单':'港元',first:title,start:s.start,end:s.end});
+  return chart(points,{heading:'每日'+title,unit:key==='orders'?'单':'HKD',first:title,start:s.start,end:s.end});
 }
 
 function performanceCards(rows){
-  const common=new Set(['会员营收','会员订单量','会员客单价']);
+  const common=new Set(['总营收','总单量','客单价']);
   return '<div class="performance-cards">'+rows.map(([label,value,formula])=>
     '<div class="metric"><div class="muted">'+(common.has(label)?escape(label):metricHelpLabel(label,formula))+'</div>'+
     '<div class="big">'+escape(value)+'</div></div>').join('')+'</div>';
@@ -100,16 +100,63 @@ function performanceFilterPanel(allowed,matching,selected){
     '<option value="">全部</option>'+values.map(value=>'<option '+(value===performanceFilters[key]?'selected':'')+
     '>'+escape(value)+'</option>').join('')+'</select></label>';
   return '<section class="panel"><div class="toolbar performance-filters">'+
-    '<label>搜索活动 <input type="search" data-performance-filter="query" value="'+escape(performanceFilters.query)+
-    '" placeholder="活动名称或编号"></label>'+
+    '<div class="activity-picker"><label>搜索活动 <span class="activity-picker-input"><input type="search" data-performance-filter="query" autocomplete="off" value="'+escape(performanceFilters.query)+
+    '" placeholder="活动名称或编号" aria-controls="performance-options"><button type="button" id="toggle-performance-options" aria-label="展开活动清单" aria-expanded="false">⌄</button></span></label>'+
+    '<div id="performance-options" class="activity-picker-options" hidden>'+
+    (matching.length?matching.map(s=>'<button type="button" data-choose-performance="'+s.activity_id+'"><strong>'+escape(s.name)+
+      '</strong><small>'+escape(s.activity_id)+' · '+escape(s.type)+'</small></button>').join(''):'<p class="sub">没有匹配活动。</p>')+'</div></div>'+
     select('type','活动类型',[...new Set(allowed.map(s=>s.type))])+
     select('goal','活动目标',[...new Set(allowed.map(s=>s.goal))])+
     select('status','活动状态',campaignStatuses)+
     '<button type="button" id="clear-performance-filters">清除筛选</button>'+
     '<span class="sub" role="status">找到 '+matching.length+' 场活动</span></div>'+
-    (matching.length>1?'<nav class="performance-matches" aria-label="匹配活动">'+matching.map(s=>
-      '<a href="#analysis/performance/'+s.activity_id+'"'+(s===selected?' aria-current="page"':'')+'>'+escape(s.name)+'</a>'
-    ).join('')+'</nav>':'')+'</section>';
+    '</section>';
+}
+
+function goalFocusPanel(activity){
+  const s=activity.activity_summary,p=activity.performance||{};
+  const number=n=>numeric(n)?fmt(n):'—';
+  const ring=(numerator,denominator,label)=>{
+    const value=numeric(numerator)&&denominator>0?numerator/denominator*100:null;
+    if(!numeric(value))return '<div class="goal-ring-empty"><strong>—</strong><span>'+label+'</span></div>';
+    const segment=(share,start,fill,text)=>{
+      if(share<=0)return '';
+      const finish=start+Math.min(share,99.9999)/100*Math.PI*2;
+      const at=(angle,r)=>[80+r*Math.cos(angle),80+r*Math.sin(angle)].join(',');
+      const large=share>50?1:0;
+      const d='M'+at(start,65)+' A65,65 0 '+large+' 1 '+at(finish,65)+' L'+at(finish,51)+
+        ' A51,51 0 '+large+' 0 '+at(start,51)+'Z';
+      return '<path class="goal-ring-segment" d="'+d+'" fill="'+fill+'" tabindex="0" role="img" aria-label="'+escape(text)+
+        '" data-metric-help="'+escape(text)+'"/>';
+    };
+    const safe=Math.max(0,Math.min(100,value));
+    const mainTip=label+' · '+fmt(numerator)+' 人 / '+fmt(denominator)+' 人 · '+pct(value);
+    const otherTip='其他消费会员 · '+fmt(Math.max(0,denominator-numerator))+' 人 · '+pct(100-safe);
+    return '<div class="goal-ring-refined"><svg viewBox="0 0 160 160" aria-label="'+escape(label)+'">'+
+      segment(safe,-Math.PI/2,'#a33142',mainTip)+
+      segment(100-safe,-Math.PI/2+safe/100*Math.PI*2,'#e7ddd5',otherTip)+
+      '</svg><div class="goal-ring-center"><strong>'+pct(value)+'</strong><span>'+label+'</span></div></div>';
+  };
+  let visualization='';
+  if(s.goal==='拉新'){
+    visualization='<div class="goal-acquisition">'+ring(p.new_buyers,p.buyers_with_signup,'新客占比')+
+      '<div class="goal-conversion"><h3>新会员首单转化</h3><div class="goal-steps">'+
+      '<div><strong>'+number(p.new_members_reached)+'</strong><span>触达新会员</span></div><span class="goal-step-arrow">→</span>'+
+      '<div><strong>'+number(p.first_orders_7d)+'</strong><span>触后 7 天首单</span></div></div>'+
+      '<div class="goal-conversion-track"><i style="width:'+(p.new_members_reached>0?p.first_orders_7d/p.new_members_reached*100:0)+'%"></i></div>'+
+      '<p class="sub">'+(p.new_members_reached>0?pct(p.first_orders_7d/p.new_members_reached*100)+' 首单转化率':'暂无触达转化记录')+'</p></div></div>';
+  }else if(s.goal==='提频'||s.goal==='唤醒'){
+    const repeat=s.goal==='提频';
+    const count=repeat?p.repeat_buyers:p.dormant_returners;
+    visualization='<div class="goal-acquisition">'+ring(count,p.buyers,repeat?'重复购买率':'沉默回购者占比')+
+      '<div class="goal-conversion"><h3>'+ (repeat?'重复购买会员':'沉默回购会员')+'</h3><div class="goal-main-number">'+number(count)+
+      '<small>人</small></div>'+performanceGoalChart(activity)+'</div></div>';
+  }else{
+    visualization='<div class="goal-missing"><strong>新品表现</strong><p>补充活动与商品的对应关系后，可展示新品销售额、订单渗透率和销量趋势。</p></div>';
+  }
+  return '<section class="panel pad goal-focus"><div class="row spread"><h2>'+escape(s.goal)+'目标表现</h2>'+
+    '<span class="goal-priority">核心表现</span></div>'+visualization+
+    '<details class="goal-details"><summary>查看目标指标</summary>'+performanceCards(performanceIndicators(activity))+'</details></section>';
 }
 
 function renderPerformance(id) {
@@ -122,7 +169,7 @@ function renderPerformance(id) {
   const selected=matching.find(s=>s.activity_id===id)||matching.find(s=>s.goal==='拉新')||matching[0];
   const filterPanel=performanceFilterPanel(allowed,matching,selected);
   if(!selected){
-    main.innerHTML=head('活动效果分析','')+filterPanel+'<section class="panel pad">没有符合条件的活动。</section>';
+    main.innerHTML='<a class="back tiny" href="#summary/activity">← 返回按活动</a>'+head('活动效果分析','')+filterPanel+'<section class="panel pad">没有符合条件的活动。</section>';
     return;
   }
   const a=activities[selected.activity_id];
@@ -130,37 +177,37 @@ function renderPerformance(id) {
   const goal=performanceIndicators(a);
   const {revenue,orders,sent,delivered}=a.metrics;
   const general=[
-    ['会员营收',numeric(revenue)?fmt(revenue,2)+' 港元':'—','活动窗口内覆盖门店的会员订单实收总额。'],
-    ['会员订单量',numeric(orders)?fmt(orders):'—','活动窗口内覆盖门店的会员交易笔数。'],
-    ['会员客单价',orders>0?fmt(revenue/orders,2)+' 港元':'—','会员营收 ÷ 会员订单量。'],
+    ['总营收',numeric(revenue)?fmt(revenue,2)+' HKD':'—','活动窗口内覆盖门店的总单量实收总额。'],
+    ['总单量',numeric(orders)?fmt(orders):'—','活动窗口内覆盖门店的会员交易笔数。'],
+    ['客单价',orders>0?fmt(revenue/orders,2)+' HKD':'—','总营收 ÷ 总单量。'],
+    ['活动投入（HKD）',numeric(kpis.cost)?fmt(kpis.cost,2):'—','活动全期总投入。'],
     ['ROI（校准）',numeric(kpis.roi)?pct(kpis.roi):'—',economicsHeaders.roi.help],
-    ['送达 CPM',numeric(kpis.cpm)?fmt(kpis.cpm,2)+' 港元':'—',economicsHeaders.cpm.help]
+    ['送达 CPM',numeric(kpis.cpm)?fmt(kpis.cpm,2)+' HKD':'—',economicsHeaders.cpm.help]
   ];
   const types=a.breakdown.dimensions.store_type.rows;
   const stores=a.breakdown.dimensions.store.rows.slice().sort((x,y)=>y.revenue-x.revenue);
-  main.innerHTML=head('活动效果分析','')+filterPanel+
+  main.innerHTML='<a class="back tiny" href="#summary/activity">← 返回按活动</a>'+head('活动效果分析','')+filterPanel+
     '<section class="panel pad performance-overview" data-performance-activity="'+selected.activity_id+'"><div class="row spread"><h2>'+
     escape(selected.name)+'</h2><div class="row performance-actions"><button type="button" class="compact-action accent-action" id="export-performance"><span class="action-symbol" aria-hidden="true">↓</span>导出 Excel</button><a class="compact-action" href="#analysis/compare/'+selected.activity_id+'"><span class="action-symbol" aria-hidden="true">⇄</span>对比分析</a></div></div>'+
     '<p class="sub">'+escape(selected.type)+' · '+escape(selected.goal)+' · '+selected.stores.length+' 家覆盖门店 · '+
     (invalidWindow(selected)?durationLabel(selected):escape(selected.start)+' 至 '+escape(selected.end))+'</p>'+
-    performanceCards(general)+'</section>'+
+    '<div class="routine-metrics">'+performanceCards(general)+'</div></section>'+
+    goalFocusPanel(a)+
     '<div class="performance-grid"><section class="panel pad performance-trend"><div class="row spread"><h2>每日经营趋势</h2>'+
-    '<label>指标 <select id="performance-trend-metric"><option value="revenue">会员营收</option>'+
-    '<option value="orders">会员订单</option><option value="basket">会员客单价</option></select></label></div>'+
+    '<label>指标 <select id="performance-trend-metric"><option value="revenue">总营收</option>'+
+    '<option value="orders">总单量</option><option value="basket">客单价</option></select></label></div>'+
     '<div id="performance-trend" data-id="'+selected.activity_id+'">'+performanceTrend(a,'revenue')+'</div></section>'+
-    '<section class="panel pad"><h2>'+escape(selected.goal)+'目标表现</h2>'+performanceCards(goal)+performanceGoalChart(a)+'</section>'+
+
     '<section class="panel pad"><h2>门店类型营收</h2>'+
-    performanceBars(types.map(row=>[row.dimension_value,row.revenue]),value=>fmt(value,2)+' 港元')+'</section>'+
+    performanceBars(types.map(row=>[row.dimension_value,row.revenue]),value=>fmt(value,2)+' HKD')+'</section>'+
     '<section class="panel pad"><h2>活动消息送达</h2>'+
     performanceBars(sent>0?[['消息记录',sent],['已送达（含打开及点击）',delivered]]:[],value=>fmt(value)+' 条')+
     (numeric(kpis.delivery)?'<p><strong>送达率 '+pct(kpis.delivery)+'</strong></p>':'')+'</section></div>'+
     (stores.length?'<details class="panel fold"><summary>查看 '+stores.length+' 家门店明细</summary>'+
-    table([['门店'],['会员营收（港元）','num'],['会员订单量','num']],stores.map(row=>
+    table([['门店'],['总营收（HKD）','num'],['总单量','num']],stores.map(row=>
       [escape(row.dimension_value),fmt(row.revenue,2),fmt(row.orders)]))+'</details>':'')+
     performanceCrossPanel(a)+
-    '<details class="panel fold"><summary>指标口径与缺数说明</summary>'+
-    table([['指标'],['计算口径']], [...general,...goal].map(([label,,formula])=>[escape(label),escape(formula)]))+
-    '<p class="sub">送达率＝送达记录 ÷ 活动全部消息记录。门店图按店型加总会员营收。以上数据用于观察活动期间的表现。</p></details>';
+    '';
 }
 function updatePerformanceFilter(event){
   const key=event.target.dataset.performanceFilter;
@@ -188,5 +235,37 @@ document.addEventListener('change',event=>{
   if(event.target.id==='performance-trend-metric'){
     const node=document.querySelector('#performance-trend');
     node.innerHTML=performanceTrend(activities[node.dataset.id],event.target.value);
+  }
+});
+
+function openPerformanceOptions(open){
+  const menu=document.querySelector('#performance-options');
+  if(!menu)return;
+  menu.hidden=!open;
+  document.querySelector('#toggle-performance-options').setAttribute('aria-expanded',String(open));
+}
+document.addEventListener('focusin',event=>{
+  if(event.target.matches('[data-performance-filter="query"]'))openPerformanceOptions(true);
+});
+document.addEventListener('click',event=>{
+  const chosen=event.target.closest('[data-choose-performance]');
+  if(chosen){
+    performanceFilters.query=chosen.dataset.choosePerformance;
+    renderPerformance(chosen.dataset.choosePerformance);
+    location.hash='#analysis/performance/'+chosen.dataset.choosePerformance;
+    return;
+  }
+  if(event.target.closest('#toggle-performance-options')){
+    openPerformanceOptions(document.querySelector('#performance-options').hidden);
+    return;
+  }
+  if(event.target.matches('[data-performance-filter="query"]'))openPerformanceOptions(true);
+  else if(!event.target.closest('.activity-picker'))openPerformanceOptions(false);
+});
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape')openPerformanceOptions(false);
+  if(event.target.matches('[data-performance-filter="query"]')&&event.key==='ArrowDown'){
+    event.preventDefault();openPerformanceOptions(true);
+    document.querySelector('[data-choose-performance]')?.focus();
   }
 });

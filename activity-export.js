@@ -34,7 +34,7 @@ function performanceCrossRows(activity,keys){
     [...values,cents/100,orders,orders>0?cents/orders/100:null,total>0?cents/total*100:null]);
 }
 
-const crossMetricHeaders=['会员营收（港元）','会员订单量','会员客单价（港元）','营收占比（%）'];
+const crossMetricHeaders=['总营收（HKD）','总单量','客单价（HKD）','营收占比（%）'];
 
 function performanceCrossPanel(activity){
   return '<section class="panel pad performance-cross"><div class="row spread"><h2>交叉分析</h2>'+
@@ -66,7 +66,7 @@ function activityExportSheets(activity,crossOnly){
     ['档期',s.start+' 至 '+s.end+(invalidWindow(s)?'（日期倒挂）':'')],
     ['数据来源','FY2026 v7 (5) 模拟工作簿'],['交叉维度',dimensions.join(' × ')||'未选择'],
     ['营收与订单','活动期覆盖门店的会员交易。各交叉组按其维度组合汇总，未记录交易的组合不列出。'],
-    ['客单价与营收占比','客单价＝会员营收 ÷ 会员订单量；营收占比＝分组营收 ÷ 全活动覆盖门店会员营收。'],
+    ['客单价与营收占比','客单价＝总营收 ÷ 总单量；营收占比＝分组营收 ÷ 全活动覆盖门店总营收。'],
     ['ROI（校准）',economicsHeaders.roi.help],['送达 CPM',economicsHeaders.cpm.help],
     ['缺数','空白代表未观测到数据或指标不适用。观察结果可能包含同期活动影响。']
   ]]];
@@ -80,12 +80,12 @@ function activityExportSheets(activity,crossOnly){
     });
     sheets.push(
       ['核心指标',['指标','数值','口径或单位'],[
-        ['会员营收',m.revenue,'港元'],['会员订单量',m.orders,'单'],
-        ['会员客单价',m.orders>0?m.revenue/m.orders:null,'港元／单'],
-        ['总投入',kpis.cost,'港元，来自校准表'],['ROI（校准）',kpis.roi,economicsHeaders.roi.help],
+        ['总营收',m.revenue,'HKD'],['总单量',m.orders,'单'],
+        ['客单价',m.orders>0?m.revenue/m.orders:null,'HKD／单'],
+        ['总投入',kpis.cost,'HKD，来自校准表'],['ROI（校准）',kpis.roi,economicsHeaders.roi.help],
         ['送达 CPM',kpis.cpm,economicsHeaders.cpm.help]]],
       ['目标效果',['指标','数值','计算口径'],goal],
-      ['每日经营',['日期','星期','会员营收（港元）','会员订单量','会员客单价（港元）'],
+      ['每日经营',['日期','星期','总营收（HKD）','总单量','客单价（HKD）'],
         activity.trend.series.revenue.map(point=>{
           const row=byDate.get(point.date);
           return [point.date,weekdayLabel(point.date),point.actual,row?.[2]??(numeric(point.actual)?0:null),row?.[3]??null];

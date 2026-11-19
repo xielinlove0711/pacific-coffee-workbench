@@ -4,7 +4,7 @@ function exportTable(tableNode,name){
   const columns=[...tableNode.querySelectorAll('thead th')];
   const indexes=columns.flatMap((cell,i)=>cell.matches('.checkcell')||['操作',localize('操作')].includes(cell.textContent.trim())?[]:[i]);
   const clean=text=>text.trim().replace(/\s*[↑↓]$/,'');
-  return [name,indexes.map(i=>clean(columns[i].textContent)),
+  const result=[name,indexes.map(i=>clean(columns[i].textContent)),
     [...tableNode.querySelectorAll('tbody tr')].map(row=>indexes.map(i=>{
       const cell=row.cells[i];
       const text=clean(cell.textContent);
@@ -17,6 +17,16 @@ function exportTable(tableNode,name){
       if(label)return label.firstChild.textContent.trim();
       return text;
     }))];
+  const nameColumn=indexes.findIndex(i=>['活动','活动名称','Campaign','Campaign name','活動','活動名稱'].includes(clean(columns[i].textContent)));
+  if(nameColumn>=0&&tableNode.querySelector('.activity-type-tag')){
+    result[1].splice(nameColumn+1,0,localize('活动类型'));
+    [...tableNode.querySelectorAll('tbody tr')].forEach((row,i)=>{
+      const cell=row.cells[indexes[nameColumn]],tag=cell.querySelector('.activity-type-tag');
+      if(tag&&!cell.querySelector('a.campaign'))result[2][i][nameColumn]=cell.querySelector('a')?.textContent.trim()||result[2][i][nameColumn];
+      result[2][i].splice(nameColumn+1,0,tag?.textContent.trim()||'');
+    });
+  }
+  return result;
 }
 
 function summaryExportSheets(){
@@ -28,7 +38,7 @@ function summaryExportSheets(){
     ['区域',summaryScope.district||'全部'],['门店',summaryScope.store||'全部'],
     ['交易渠道',summaryScope.channel||'全部'],['活动类型',summaryScope.type||'全部'],
     ['排序',(summaryMetricLabels[view.sort]||view.sort)+' · '+(view.direction===1?'升序':'降序')],
-    ['金额单位','港元。空白表示缺数据或不适用。'],
+    ['金额单位','HKD。空白表示缺数据或不适用。'],
     ['营收与订单','覆盖工作簿中的会员交易。客单价＝会员营收 ÷ 会员订单量。']
   ];
   if(summaryView==='store')scopeRows.push(['门店类型',view.type||'全部']);

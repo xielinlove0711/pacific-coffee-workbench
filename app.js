@@ -12,7 +12,7 @@ let filters = {query:'', month:'', status:'', channel:'', owner:''};
 const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[ch]);
 const numeric = n => Number.isFinite(n);
 const fmt = (n, digits = 0) => numeric(n) ? n.toLocaleString('zh-CN',{minimumFractionDigits:digits,maximumFractionDigits:digits}).replace('-','−') : '无可用数据';
-const money = n => numeric(n) ? fmt(n/10000,1)+' 万港元' : '无可用数据';
+const money = n => numeric(n) ? fmt(n/10000,1)+' 万HKD' : '无可用数据';
 const ratio = n => numeric(n) ? fmt(n,2) : '暂不可估';
 const date = x => (x || '').slice(0,10);
 const pct = n => numeric(n) ? fmt(n,1)+'%' : '无可用数据';
@@ -33,6 +33,33 @@ function campaignStatus(s,today=hongKongDateFormat.format(new Date())){
   if(isLong(s)||!s.start||!s.end||invalidWindow(s))return '';
   if(today<s.start)return '未开始';
   return today>s.end?'已结束':'进行中';
+}
+function compactCampaignPeriod(s){
+  if(invalidWindow(s))return durationLabel(s);
+  const range=displayDateRange(s.start,s.end);
+  return '<span class="compact-period" tabindex="0" data-metric-help="'+escape(s.start+' 至 '+s.end)+'">'+
+    range+'<small>'+campaignDays(s)+' 天</small></span>';
+}
+function compactStatisticsPeriod(s,from,to,today=hongKongDateFormat.format(new Date())){
+  if(invalidWindow(s))return '<span class="cadence-warning">日期待核</span>';
+  const status=campaignStatus(s,today);
+  if(status==='未开始')return '<span class="statistics-pending" data-metric-help="活动尚未开始，暂无实际统计期间。">◷ 待开始</span>';
+  const marker=status==='进行中'?'<small class="statistics-live">● 统计中</small>':'';
+  if(!from||!to)return marker+'<span class="muted">暂无记录</span>';
+  const range=displayDateRange(from,to);
+  return '<span class="compact-period" tabindex="0" data-metric-help="'+escape('统计期间：'+from+' 至 '+to+
+    (status==='进行中'?'。活动尚未结束，当前为阶段数据。':''))+'">'+range+marker+'</span>';
+}
+function campaignStatusIcon(s,today){
+  const status=campaignStatus(s,today);
+  const states={
+    '未开始':{symbol:'◷',style:'upcoming'},
+    '进行中':{symbol:'●',style:'running'},
+    '已结束':{symbol:'✓',style:'ended'}
+  };
+  const state=states[status];
+  return state?'<span class="campaign-status-label status-'+state.style+'"><span aria-hidden="true">'+state.symbol+
+    '</span>'+status+'</span>':'';
 }
 const durationLabel = s => invalidWindow(s)
   ? '<span class="cadence-warning">'+String(campaignDays(s)).replace('-','−')+' 天 · 日期倒挂</span>'
@@ -75,9 +102,9 @@ const summaryScope={from:revenueData.dates.at(-15),to:revenueData.dates.at(-1),s
 const viewSettings=Object.fromEntries(Object.entries({day:'name',store:'revenue',activity:'duration',overview:'duration'})
   .map(([view,sort])=>[view,{sort,direction:-1,type:'',metric:'revenue'}]));
 const summaryMetricLabels={
-  name:'日期',duration:'档期天数',revenue:'会员营收（港元）',orders:'会员订单量',
-  basket:'会员客单价（港元）',cost:'活动花费（港元）',gross:'校准净增量毛利（港元）',
-  roi:'ROI（%）',cpm:'送达 CPM（港元）',delivered:'送达记录',delivery:'送达率（%）'
+  name:'日期',duration:'档期天数',revenue:'会员营收（HKD）',orders:'会员订单量',
+  basket:'会员客单价（HKD）',cost:'活动花费（HKD）',gross:'校准净增量毛利（HKD）',
+  roi:'ROI（%）',cpm:'送达 CPM（HKD）',delivered:'送达记录',delivery:'送达率（%）'
 };
 function summaryMetricKeys(view){
   const transaction=['revenue','orders','basket'];
@@ -116,14 +143,19 @@ const basketValue=(revenue,orders)=>orders>0?revenue/orders/100:null;
 let summaryView='day';
 let summaryRows=[];
 let overviewExportSheets=[];
+let overviewChannelPanel='';
 const hkd=n=>numeric(n)?fmt(n/100,2):'—';
 function availableStores(){return revenueData.stores.filter(s=>!storeMode()||s.name===store)}
 const estimatedSpend=revenueData.spend;
 function comparison(current,previous,period){
-  if(!numeric(current)||!numeric(previous)||previous===0)return '环比 — · '+period;
+  if(!numeric(current)||!numeric(previous)||previous===0)return '—';
   const change=(current-previous)/previous*100;
-  return '环比 '+(change>0?'↑ +':change<0?'↓ ':'')+fmt(change,1)+'% · '+period;
+  const kind=change>0?'up':change<0?'down':'flat';
+  return '<span class="change-'+kind+'" tabindex="0" data-metric-help="'+escape('环比统计期间：'+period)+'" aria-label="'+
+    (change>0?'上升':change<0?'下降':'持平')+'"><span aria-hidden="true">'+
+    (change>0?'↑':change<0?'↓':'→')+'</span> '+fmt(Math.abs(change),1)+'%</span>';
 }
+
 const weekdayLabel=date=>'星期'+'日一二三四五六'[new Date(date+'T00:00:00Z').getUTCDay()];
 
 const overviewProductGroups={
@@ -190,14 +222,16 @@ function overviewSalesCharts(shops,from,to){
       categorySalesRows(products,current,previous,hasPrevious)],
     ['订单渠道',['渠道','订单量','订单占比（%）'],channelRows.map(([label,n])=>[label,n,n/totalOrders*100])]
   );
-  return '<div class="overview-sales-grid">'+
-    '<section class="panel pad"><h2>畅销商品</h2><p class="sub">当前期间销量前 5，按件数统计</p>'+
+  overviewChannelPanel=channelDonutPanel(channelRows,totalOrders);
+  return '<div class="overview-sales-grid">'+overviewChannelPanel+
+    '<section class="panel pad bestseller-panel"><h2 tabindex="0" data-metric-help="当前期间销量前 5，按件数统计">畅销商品</h2>'+
     performanceBars(best,n=>fmt(n)+' 件')+'</section>'+
-    '<section class="panel pad"><h2>销量增长最快</h2><p class="sub">较上一等长区间，基准销量至少 10 件</p>'+
+    '<section class="panel pad growth-panel"><h2 tabindex="0" data-metric-help="较上一等长区间，基准销量至少 10 件">销量增长最快</h2>'+
     (previousStart<0?'<p class="sub">上一等长区间超出数据范围。</p>':
-      fastest.length?performanceBars(fastest.map(([name,base,units,rate])=>[name+'（'+base+' → '+units+' 件）',rate]),n=>'+'+pct(n)):'<p class="sub">暂无符合条件的增长商品。</p>')+'</section>'+
-    '<section class="panel pad"><h2>订单渠道分布</h2><p class="sub">各渠道订单量及占比</p>'+
-    performanceBars(channelRows,n=>fmt(n)+' 单 · '+pct(n/totalOrders*100))+'</section></div>';
+      fastest.length?'<div class="performance-bars">'+fastest.map(([name,,units,rate],index)=>
+        '<div class="growth-list-row"><span class="growth-rank">'+(index+1)+'</span><span class="growth-product">'+escape(name)+
+        '<small>'+fmt(units)+' 件</small></span><strong class="growth-rate">↑ '+pct(rate)+'</strong></div>'
+      ).join('')+'</div>':'<p class="sub">暂无符合条件的增长商品。</p>')+'</section>'+'</div>';
 }
 function summary(){
   const dates=revenueData.dates;
@@ -236,16 +270,22 @@ function summary(){
   }
   const priorCosts=prevStart>=0&&costAvailable?estimatedSpend.slice(prevStart,from):[];
   const priorSpend=priorCosts.some(numeric)?priorCosts.reduce((sum,n)=>sum+(n??0),0):null;
-  main.innerHTML='<div class="row spread summary-page-head">'+head(titles[summaryView],'FY2026 · v7 工作簿 · 会员交易')+
+  const revenueChange=overview?comparison(recorded?total:null,priorRevenue,priorPeriod):'';
+  const spendChange=overview&&costAvailable?comparison(costTotal,priorSpend,priorPeriod):'';
+  const metricWithChange=(label,value,change)=>'<div class="metric"><div class="muted">'+label+
+    '</div><div class="metric-value-row"><div class="big">'+value+'</div><span class="metric-change">'+change+'</span></div></div>';
+  main.innerHTML='<div class="row spread summary-page-head">'+head(titles[summaryView],'会员交易')+
     '<button type="button" class="compact-action accent-action no-print" data-action="export-summary"><span class="action-symbol" aria-hidden="true">↓</span>导出 Excel</button></div>'+
     '<section class="panel">'+controls+'</section><section class="metrics">'+
-    metric('会员总营收（港元）',recorded?hkd(total):'—',overview?comparison(recorded?total:null,priorRevenue,priorPeriod):escape(selected||'全部门店'))+
-    metric('会员订单量',recorded?fmt(orderTotal):'—','单')+
-    (overview?metric('会员总数（全网）',fmt(revenueData.member_count),'客户主数据')+
-      metric('同期新增注册（全网）',fmt(registrations),'日期筛选范围内'):'')+
-    metric('会员客单价（港元）',orderTotal?hkd(total/orderTotal):'—','营收 ÷ 订单')+
-    (overview?metric('交叠期间的活动',fmt(scopedActivities().length),'当前活动筛选范围')+metric('活动触达投入（港元）',hkd(costTotal),costAvailable?comparison(costTotal,priorSpend,priorPeriod):'源表提供全网日投入'):'')+
-    metric('有交易记录的天数',recorded+' / '+days.length,'所选范围内')+'</section>'+
+    (overview?metricWithChange('总营收（HKD）',recorded?hkd(total):'—',revenueChange):
+      metric('会员营收（HKD）',recorded?hkd(total):'—',escape(selected||'全部门店')))+
+    metric(overview?'总单量':'会员订单量',recorded?fmt(orderTotal):'—',overview?'':'单')+
+    (overview?metric('会员总数',fmt(revenueData.member_count),'')+
+      metric('新增会员数',fmt(registrations),''):'')+
+    metric(overview?'客单价（HKD）':'会员客单价（HKD）',orderTotal?hkd(total/orderTotal):'—','')+
+    (overview?metricWithChange('活动投入（HKD）',hkd(costTotal),spendChange):'')+
+    (overview?'<div class="metric"><div class="muted">有记录天数</div><div class="big" tabindex="0" data-metric-help="所选范围内">'+recorded+' / '+days.length+'</div></div>':
+      metric('有交易记录的天数',recorded+' / '+days.length,'所选范围内'))+'</section>'+
     '<div id="summary-content"></div>';
   for(const field of main.querySelectorAll('[data-scope]')){
     if(field.type==='checkbox')field.checked=!!summaryScope[field.dataset.scope];
@@ -257,16 +297,16 @@ function summary(){
     const content=document.querySelector('#summary-content');
     const points=days.map((d,i)=>({date:d.name,actual:numeric(d.revenue)?d.revenue/100:null,
       baseline:costAvailable&&numeric(costs[i])?costs[i]/100:null}));
-    content.innerHTML='<section class="panel pad"><h2>每日营收与活动支出</h2>'+
-      chart(points,{heading:'每日营收与活动支出',first:'会员营收',second:'活动触达投入',caption:
-        '营业收入按有记录日汇总，无记录日留空。'+(costAvailable?'活动触达投入来自工作簿的日损益表。':'门店范围内暂无支出明细。')+
-        ' 环比对照紧邻的上一等长区间。'})+'</section>';
+    content.innerHTML=overviewTrendPanel(points);
     overviewExportSheets=[
-      ['每日经营',['日期','星期','会员营收（港元）','会员订单量','客单价（港元）','活动投入（港元）'],
+      ['每日经营',['日期','星期','会员营收（HKD）','会员订单量','客单价（HKD）','活动投入（HKD）'],
         days.map((d,i)=>[d.name,weekdayLabel(d.name),numeric(d.revenue)?d.revenue/100:null,d.orders,basketValue(d.revenue,d.orders),
           costAvailable&&numeric(costs[i])?costs[i]/100:null])]
     ];
-    content.innerHTML+=overviewSalesCharts(included,from,to)+overviewCampaignTable();
+    const productCharts=overviewSalesCharts(included,from,to);
+    const primaryTrend=content.innerHTML;
+    content.innerHTML='<div class="overview-main-layout">'+primaryTrend+overviewPatternPanels(included,from,to)+'</div>'+
+      productCharts+overviewCampaignTable();
     return;
   }
   const rangeTotal=(shop,lo=from,hi=to)=>scopedDays(shop).reduce((value,[d,revenue,orders])=>{
@@ -282,17 +322,22 @@ function summary(){
     const fullCatalog=!summaryScope.limitActivities;
     summaryRows=scopedActivities(!fullCatalog).map(s=>{
       if(isLong(s))return {id:s.activity_id,name:s.name,revenue:null,orders:null};
-      const lo=Math.max(fullCatalog?0:from,dates.indexOf(date(s.start))),end=dates.indexOf(date(s.end)),hi=Math.min(fullCatalog?dates.length-1:to,end<0?to:end);
+      const today=hongKongDateFormat.format(new Date());
+      const lower=[s.start,dates[fullCatalog?0:from]].sort().at(-1);
+      const upper=[s.end,today,dates[fullCatalog?dates.length-1:to]].sort()[0];
+      const lo=dates.findIndex(day=>day>=lower);
+      const hi=dates.findLastIndex(day=>day<=upper);
+      const valid=lo>=0&&hi>=lo&&!invalidWindow(s);
       const members=new Set(s.stores);
       let revenue=null,orders=null;
       for(const shop of included){
-        if(!members.has(shop.name))continue;
+        if(!valid||!members.has(shop.name))continue;
         const result=rangeTotal(shop,lo,hi);
         if(result.orders===null)continue;
         revenue=(revenue??0)+result.revenue;
         orders=(orders??0)+result.orders;
       }
-      return {id:s.activity_id,name:s.name,revenue,orders,basket:basketValue(revenue,orders),duration:campaignDays(s),...activityEconomics(s),period:!s.stores.length?'缺少门店映射':lo<=hi?dates[lo]+' 至 '+dates[hi]:'—'};
+      return {id:s.activity_id,name:s.name,revenue,orders,basket:basketValue(revenue,orders),duration:campaignDays(s),...activityEconomics(s),period:compactStatisticsPeriod(s,valid?dates[lo]:null,valid?dates[hi]:null,today)};
     });
   }
   const settings=viewSettings[summaryView];
@@ -327,9 +372,9 @@ function drawSummary(){
   if(chartNode){
     const isRevenue=settings.metric==='revenue';
     chartNode.innerHTML=chart([...rows].sort((a,b)=>a.name.localeCompare(b.name)).map(r=>({date:r.name,actual:isRevenue&&r.revenue!==null?r.revenue/100:r[settings.metric],baseline:null})),
-      {heading:isRevenue?'每日会员营收':'每日会员订单量',unit:isRevenue?'港元':'单',caption:'趋势按选定日期与门店展示。无交易记录的日期留空。'});
+      {heading:isRevenue?'每日会员营收':'每日会员订单量',unit:isRevenue?'HKD':'单',caption:'趋势按选定日期与门店展示。无交易记录的日期留空。'});
   }
-  const columns=[['name',summaryView==='day'?'日期':'门店'],...(summaryView==='store'?[['type','门店类型']]:[]),['revenue','会员营收（港元）'],['orders','会员订单量'],['basket','会员客单价（港元）'],...(summaryView==='day'&&dailySpendAvailable()?[['cost','活动花费（港元）']]:[]),['status','记录状态']];
+  const columns=[['name',summaryView==='day'?'日期':'门店'],...(summaryView==='store'?[['type','门店类型']]:[]),['revenue','会员营收（HKD）'],['orders','会员订单量'],['basket','会员客单价（HKD）'],...(summaryView==='day'&&dailySpendAvailable()?[['cost','活动花费（HKD）']]:[]),['status','记录状态']];
   const header=columns.map(([key,label])=>{
     const direction=settings.direction===1?'ascending':'descending';
     const numericClass=['revenue','orders','basket','cost'].includes(key)?' class="num"':'';
@@ -378,23 +423,22 @@ function list(){
   const longOpen=listing.querySelector('.permanent-panel')?.open;
   const long=rows.filter(isLong).sort((a,b)=>a.activity_id.localeCompare(b.activity_id));
   const short=rows.filter(s=>!isLong(s));
-  const columns=()=>(role==='manager'?'<th class="checkcell" scope="col"><span aria-label="选择对比活动">选</span></th>':'')+'<th scope="col">活动名称</th><th scope="col">活动类型</th><th scope="col">活动档期与天数</th><th scope="col">运行状态</th><th scope="col">统计期间</th><th scope="col" class="num">会员营收（港元）</th><th scope="col" class="num">会员订单量</th><th scope="col" class="num">会员客单价（港元）</th><th scope="col" class="num">活动花费（港元）</th><th scope="col" class="num">'+economicsHeader('roi')+'</th><th scope="col" class="num">'+economicsHeader('cpm')+'</th><th scope="col">结果可用性</th><th scope="col">操作</th>';
+  const columns=()=>(role==='manager'?'<th class="checkcell" scope="col"><span aria-label="选择对比活动">选</span></th>':'')+'<th scope="col">活动名称</th><th scope="col">活动类型</th><th scope="col">档期</th><th scope="col">统计期间</th><th scope="col" class="num">会员营收（HKD）</th><th scope="col" class="num">会员订单量</th><th scope="col" class="num">会员客单价（HKD）</th><th scope="col" class="num">活动花费（HKD）</th><th scope="col" class="num">'+economicsHeader('roi')+'</th><th scope="col" class="num">'+economicsHeader('cpm')+'</th><th scope="col">操作</th>';
   const campaignTable=(items,label)=>items.length?'<div class="scroller"><table aria-label="'+label+'"><thead><tr>'+columns()+'</tr></thead><tbody>'+items.map(s=>{
     const id=s.activity_id,a=activities[id],e=state(a),sales=metricsById.get(id),kpis=activityEconomics(s);
     const entry='<a class="entry" href="#analysis/performance/'+id+'">看活动效果 →</a> · <a href="#analysis/compare/'+id+'">去对比 →</a>';
     return '<tr data-row="'+id+'"'+(picked.has(id)?' class="selected"':'')+'>'+(role==='manager'?'<td class="checkcell"><input type="checkbox" data-pick="'+id+'" aria-label="选择 '+escape(s.name)+'" '+(picked.has(id)?'checked':picked.size>=2?'disabled':'')+'></td>':'')+
-      '<td>'+link(id,'overview',escape(s.name)+'<small>'+escape(s.owner)+'</small>','campaign')+'</td><td class="nowrap">'+escape(s.type||'未分类')+'</td><td class="nowrap">'+escape(s.start)+' 至 '+escape(s.end)+'<br>'+durationLabel(s)+'</td><td class="nowrap">'+(campaignStatus(s,today)||'—')+'</td><td class="nowrap">'+sales.period+'</td><td class="num">'+hkd(sales.revenue)+'</td><td class="num">'+(sales.orders===null?'—':fmt(sales.orders))+'</td><td class="num">'+(numeric(sales.basket)?fmt(sales.basket,2):'—')+'</td><td class="num">'+(numeric(kpis.cost)?fmt(kpis.cost,2):'—')+'</td><td class="num">'+(numeric(kpis.roi)?pct(kpis.roi):'—')+'</td><td class="num">'+(numeric(kpis.cpm)?fmt(kpis.cpm,2):'—')+'</td><td>'+badge(e)+'</td><td>'+entry+'</td></tr>';
+      '<td>'+link(id,'overview',escape(s.name),'campaign')+campaignStatusIcon(s,today)+'</td><td class="nowrap">'+escape(s.type||'未分类')+'</td><td class="nowrap">'+compactCampaignPeriod(s)+'</td><td class="nowrap">'+sales.period+'</td><td class="num">'+hkd(sales.revenue)+'</td><td class="num">'+(sales.orders===null?'—':fmt(sales.orders))+'</td><td class="num">'+(numeric(sales.basket)?fmt(sales.basket,2):'—')+'</td><td class="num">'+(numeric(kpis.cost)?fmt(kpis.cost,2):'—')+'</td><td class="num">'+(numeric(kpis.roi)?pct(kpis.roi):'—')+'</td><td class="num">'+(numeric(kpis.cpm)?fmt(kpis.cpm,2):'—')+'</td><td>'+entry+'</td></tr>';
   }).join('')+'</tbody></table></div>':'<p class="campaign-empty muted">没有匹配活动。</p>';
   listing.innerHTML=
-    permanentPanel(long,'常设活动',longOpen)+
-    '<section class="campaign-group seasonal-panel" aria-labelledby="short-title"><header><h2 id="short-title">非常设活动</h2><span class="tiny muted">'+summaryMetricLabels[viewSettings.activity.sort]+' · '+short.length+' 场</span></header>'+campaignTable(short,'非常设活动')+'</section>';
+    '<section class="campaign-group seasonal-panel" aria-labelledby="short-title"><header><h2 id="short-title">非常设活动</h2><span class="tiny muted">'+summaryMetricLabels[viewSettings.activity.sort]+' · '+short.length+' 场</span></header>'+campaignTable(short,'非常设活动')+'</section>'+permanentPanel(long,'常设活动',longOpen);
   document.querySelector('#selection').innerHTML=picked.size?'<span class="tiny muted">已选 '+picked.size+' / 2</span><button data-action="compare" '+(picked.size<2?'disabled':'')+'>对比活动</button>':'';
 }
-function chart(points,{heading,unit='港元',first='实际',second='对照估计',start,end,caption=''}){
+function chart(points,{heading,unit='HKD',first='实际',second='对照估计',start,end,caption=''}){
   if(!points.length || !points.some(p=>numeric(p.actual)||numeric(p.baseline))) return '<p class="muted">无可用趋势数据。</p>';
   const has=points.some(p=>numeric(p.baseline));
   const all=points.flatMap(p=>[p.actual,p.baseline]).filter(numeric), w=800,h=242, sx=70,ex=775,sy=32,ey=192;
-  const axis=v=>unit==='港元' && Math.abs(v)>=1000 ? fmt(v/1000,1)+'k' : fmt(v,unit==='指数'&&Math.abs(v)<2?2:0);
+  const axis=v=>unit==='HKD' && Math.abs(v)>=1000 ? fmt(v/1000,1)+'k' : fmt(v,unit==='指数'&&Math.abs(v)<2?2:0);
   const top=Math.ceil(Math.max(...all)/4)*4 || 4;
   const times=points.map(p=>Date.parse(p.date)), timed=!points.some(p=>p.label) && times.every(numeric) && times.at(-1)>times[0];
   const x=i=>sx+(ex-sx)*(timed?(times[i]-times[0])/(times.at(-1)-times[0]):i/Math.max(1,points.length-1));
@@ -451,7 +495,7 @@ function detail(id,tab){
   const conclusion=storeMode()?'本店在活动覆盖范围内，执行差异待核对。':numeric(e.roi)?(below?'估计未回本。':'估计达到盈亏线。')+' '+(e.label==='证据通过'?'模拟结果符合归因与显著性规则。':'当前结果不足以支持预算决策。'):e.reason;
   const stats=storeMode()?[
     ['本店覆盖','已覆盖',store],['本店会员营收',money(storeRow(a)?.revenue),'活动期会员交易'],['本店会员订单',numeric(storeRow(a)?.orders)?fmt(storeRow(a).orders):'无可用数据','活动期订单（单）']
-  ]:[['校准回收倍数',ratio(a.metrics.worked_roi),'v7 活动全期参考'],['增量 ROI','待复核','需有效的增量与成本估计'],['交易日覆盖率',pct(a.data_quality.completeness),'报告闸门 ≥ 90%']];
+  ]:[['校准回收倍数',ratio(a.metrics.worked_roi),'活动全期参考'],['增量 ROI','待复核','需有效的增量与成本估计'],['交易日覆盖率',pct(a.data_quality.completeness),'报告闸门 ≥ 90%']];
   const tabs=[['overview','结果概览'],['evidence','归因证据'],['report','复盘报告']];
   main.innerHTML='<a class="back tiny" href="#summary/activity">← 返回按活动</a><div class="pagehead"><div class="row"><h1>'+escape(s.name)+'</h1>'+badge(e)+'</div><p class="sub">'+activityPeriod(s)+' · '+(storeMode()?store:s.stores.length+' 家覆盖门店')+' · '+analysisPeriod(s,t)+'</p></div><div class="notice row spread"><strong>'+conclusion+'</strong>'+action+'</div><div class="metrics">'+stats.map(v=>metric(...v)).join('')+'</div><nav class="tabs no-print" aria-label="详情导航">'+tabs.map(([key,label])=>link(id,key,label,key===tab?'active':'')).join('')+'</nav>'+
     '<section class="panel pad cadence-detail '+'seasonal-panel'+'"><h2>'+
@@ -474,8 +518,8 @@ function overview(a,e){
   const support=[
     ['营收与毛利','会员营收',money(a.metrics.revenue),'参与门店·活动期'],
     ['营收与毛利','会员订单',fmt(a.metrics.orders),'参与门店·活动期（单）'],
-    ['成本与回报','总投入',money(amount),'v7 校准表'],
-    ['成本与回报','校准回收倍数',ratio(a.metrics.worked_roi),'v7 校准表'],
+    ['成本与回报','总投入',money(amount),'校准表'],
+    ['成本与回报','校准回收倍数',ratio(a.metrics.worked_roi),'校准表'],
     ['触达与核销','触达记录',fmt(a.metrics.sent),'活动触达表（条）'],
     ['触达与核销','送达率',pct(a.metrics.delivery),'累计送达、打开、点击 ÷ 触达记录'],
     ['触达与核销','核销率','无可用数据','缺少核销流水']];
@@ -483,7 +527,7 @@ function overview(a,e){
   return '<section class="panel pad" id="trend"><div class="row spread"><h2>日营收趋势</h2>'+badge(e)+'</div>'+chart(rows,{heading:'日营收趋势',start:isLong(s)?null:date(s.start),end:isLong(s)?null:date(s.end),caption:'图示 '+(rows[0]?.date||'—')+' 至 '+(rows.at(-1)?.date||'—')+'。'+(!isLong(s)&&inCampaign.at(-1)?.date<date(s.end)?' 数据包仅提供活动期部分日序列，活动结束 '+date(s.end)+' 在图示范围外。':'')+(has?' 对照估计沿用原型口径。':' '+e.reason)})+'</section>'+
   '<div class="cols"><section class="panel pad" id="water"><div class="row spread"><h2>净增量毛利构成</h2>'+badge(e)+'</div>'+waterfall(a,e)+'</section><section class="panel pad" id="stores"><div class="row spread"><h2>门店类型对比</h2>'+badge(e)+'</div><p class="tiny muted">'+(e.label==='证据通过'?'按会员营收降序。':'门店差异待验证 · 按会员营收降序。')+'</p>'+(types.length?table([['门店类型'],['会员营收','num'],['会员订单','num']],types.map(r=>[escape(r.dimension_value),money(r.revenue),fmt(r.orders)])):'<p class="sub">无可用数据。</p>')+(dims.length?'<details class="fold"><summary>查看参与门店</summary>'+table([['门店'],['会员营收','num'],['会员订单','num']],dims.map((r,i)=>['<button data-action="store-detail" data-id="'+id+'" data-index="'+i+'">'+escape(r.dimension_value)+'</button>',money(r.revenue),fmt(r.orders)]))+'</details>':'')+'</section></div>'+
   '<section class="panel pad"><h2>次要指标</h2>'+table([['分组'],['指标'],['活动期数值','num'],['对比基准']],support.map(([group,label,value,base])=>[group,label,value,base]))+'<p class="tiny muted">统计期间 '+escape(t.caliber?.campaign_window||date(s.start)+' 至 '+date(s.end))+'</p></section>'+
-  '<details class="panel fold"><summary>预算构成与活动档案</summary><p>计划 '+money(a.activity.budget?.planned)+' · 实际 '+money(amount)+'</p><p class="sub">v7 提供总投入，暂无核销让利和媒体费用拆分。</p><p class="sub">'+escape(a.activity.mechanism)+' · '+escape(s.owner)+'</p></details><details class="panel fold"><summary>详细口径</summary><p>'+escape(t.caliber?.formula||'仅描述性口径')+'</p><p class="sub">'+escape(t.net?.formula||'')+'</p></details>';
+  '<details class="panel fold"><summary>预算构成与活动档案</summary><p>计划 '+money(a.activity.budget?.planned)+' · 实际 '+money(amount)+'</p><p class="sub">提供总投入，暂无核销让利和媒体费用拆分。</p><p class="sub">'+escape(a.activity.mechanism)+' · '+escape(s.owner)+'</p></details>';
 }
 function evidence(a,e){
   const t=a.attribution,p=t.parallel_trend,g=t.control_group,id=a.activity_summary.activity_id;
@@ -515,10 +559,10 @@ function report(a,e){
   const labels=['发生了什么','证据够不够','下一轮做什么'];
   const links=storeMode()?[['overview','查看本店执行','execution'],['evidence','查看本店证据',''],['overview','回到本店执行要点','execution']]:
     [['overview','查看净增量毛利图','water'],['evidence','查看对照组检查','checks'],['overview','查看门店类型对比','stores']];
-  return '<article class="report panel pad"><div class="row spread"><div class="row"><span class="sim">模拟数据</span>'+badge(e)+'</div><span class="tiny muted">'+(doc.finalized?'已定稿 · '+escape(doc.finalized):storeMode()?'本店摘要':'草稿')+'</span></div><h2 style="margin-top:10px">'+escape(s.name)+'｜复盘摘要</h2><p class="muted">'+activityPeriod(s)+' · '+(storeMode()?store:escape(s.owner))+' · '+analysisPeriod(s,t)+'</p>'+
+  return '<article class="report panel pad"><div class="row spread"><div class="row">'+badge(e)+'</div><span class="tiny muted">'+(doc.finalized?'已定稿 · '+escape(doc.finalized):storeMode()?'本店摘要':'草稿')+'</span></div><h2 style="margin-top:10px">'+escape(s.name)+'｜复盘摘要</h2><p class="muted">'+activityPeriod(s)+' · '+(storeMode()?store:escape(s.owner))+' · '+analysisPeriod(s,t)+'</p>'+
     (!e.completeness?'<div class="notice">'+e.reason+' 当前可预览草稿。</div>':'')+
     fields.map((value,i)=>'<section><h3>'+labels[i]+'</h3>'+(editing&&canEdit?'<textarea maxlength="450" aria-label="'+labels[i]+'">'+escape(value)+'</textarea>':'<p style="white-space:pre-wrap">'+escape(value)+'</p>')+link(id,links[i][0],links[i][1]+' →','source-link',links[i][2])+'</section>').join('')+
-    '<footer>数据来源 '+escape(meta.source)+' · 原型归档 '+escape(meta.version)+' · 数据截至 '+escape(a.data_quality.cutoff_time)+'<br>证据状态 '+e.label+' · '+escape(a.report.caliber_version||'模拟活动库')+'</footer>'+
+    '<footer>数据截至 '+escape(a.data_quality.cutoff_time)+'<br>证据状态 '+e.label+'</footer>'+
     '<div class="row no-print" style="margin-top:17px">'+(editing&&canEdit?'<button class="primary" data-action="save" data-id="'+id+'">保存草稿</button><button data-action="cancel">取消</button>':
     (canEdit?'<button data-action="edit">编辑草稿</button>':'')+'<button class="primary" data-action="print">'+(!e.completeness?'打印草稿 / 保存草稿 PDF':'打印 / 保存 PDF')+'</button>'+
     (role==='manager'&&!doc.finalized?'<button data-action="finalize" data-id="'+id+'" '+(!e.finalize?'disabled title="'+escape(e.reason)+'"':'')+'>确认定稿</button>':''))+'<span id="report-note" role="status" class="tiny muted"></span></div></article>';
@@ -535,7 +579,7 @@ function methods(){
     ['活动前均值偏差','≤ 15%','结果仅供参考，复核对照组。'],
     ['最大分层偏差','≤ 2%','结果仅供参考，复核分层匹配。'],
     ['归因成立后的显著性','95% 置信区间排除 0','区间包含 0 时显示「未观察到显著效果」。']
-  ])+'</section><section class="panel pad"><h2>数据来源</h2><p>'+escape(meta.note)+'</p><p class="sub">v7 非唤回活动的效果来自档位校准。唤回活动的参考净增量按触后康复消费 × 68% 毛利率 ×（1 − 35% 自然回流假设）计算。</p><p class="sub">币种为港元。校准回收倍数沿用工作簿的净 ROI 列。增量 ROI 需另行复核，日投入取自日损益表。</p><p class="sub">当前工作台采用市场经理视图。</p></section><a class="button primary" href="#feedback">反馈问题 →</a>';
+  ])+'</section><section class="panel pad"><h2>数据来源</h2><p>'+escape(meta.note.replace('模拟数据 · ',''))+'</p><p class="sub">非唤回活动的效果来自档位校准。唤回活动的参考净增量按触后康复消费 × 68% 毛利率 ×（1 − 35% 自然回流假设）计算。</p><p class="sub">币种为HKD。校准回收倍数沿用工作簿的净 ROI 列。增量 ROI 需另行复核，日投入取自日损益表。</p><p class="sub">当前工作台采用市场经理视图。</p></section><a class="button primary" href="#feedback">反馈问题 →</a>';
 }
 function render(){
   let [section,id,tab,anchor]=location.hash.slice(1).split('/');
@@ -560,6 +604,7 @@ function render(){
     else renderAnalysis(id==='compare'?tab:id);
   }
   else if(nav==='reports') renderWorkspace();
+  else if(nav==='profile') renderProfile();
   else if(nav==='methods') methods();
   else if(nav==='feedback') renderFeedback();
   else {summaryView=['day','store','activity'].includes(id)?id:'overview';summary()}
@@ -693,4 +738,4 @@ window.addEventListener('scroll',hideMetricHelp,true);
 window.addEventListener('resize',hideMetricHelp);
 window.addEventListener('hashchange',hideMetricHelp);
 document.addEventListener('keydown',event=>{if(event.key==='Escape')hideMetricHelp()});
-render();
+document.addEventListener('DOMContentLoaded',()=>render(),{once:true});
