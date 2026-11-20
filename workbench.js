@@ -486,7 +486,7 @@ function evidenceHTML(r) {
 
 function showResult() {
   const output=main.querySelector('#analysis-output');
-  if(lastResult) output.innerHTML=evidenceHTML(lastResult)+'<div class="row toolbar"><button data-work="save-run">保存结果</button><button data-work="send-run">加入素材草稿纸</button></div>';
+  if(lastResult) output.innerHTML=evidenceHTML(lastResult)+'<div class="row toolbar"><button data-work="save-run">保存结果</button><button data-work="send-run">加入素材库</button></div>';
   main.querySelector('#run-list').innerHTML=currentRuns.length?currentRuns.map((r,i)=>'<div class="row run-row"><span>'+escape(r.title+' · '+r.detail)+'</span><button data-work="view-run" data-value="'+i+'">打开</button></div>').join(''):'<p class="sub">运行比较后可保存到当前浏览器。</p>';
 }
 
@@ -521,12 +521,61 @@ function workspaceDraft() {
   if(draftRole!==role){draftRole=role;draftState=reportDraft()}
   return draftState;
 }
-function saveWorkspace() {
-  try{
-    localStorage.setItem('pacific-workbench-v7-'+role,JSON.stringify(workspaceDraft()));
-    return '草稿已保存在当前浏览器';
-  } catch{return '浏览器无法保存草稿，可在离开前导出。'}
+function reportSaveTime(value){
+  if(!value)return '尚未保存';
+  return new Date(value).toLocaleString('zh-CN',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
 }
+function reportAutoSaveStatus(){return workspaceDraft().autoSavedAt?'自动保存于 '+reportSaveTime(workspaceDraft().autoSavedAt):'编辑后自动保存'}
+function saveWorkspace() {
+  const draft=workspaceDraft(),previous=draft.autoSavedAt;
+  draft.autoSavedAt=new Date().toISOString();
+  try{
+    localStorage.setItem('pacific-workbench-v7-'+role,JSON.stringify(draft));
+    const status=document.querySelector('#workspace-status');if(status)status.textContent=reportAutoSaveStatus();
+    return reportAutoSaveStatus();
+  }catch{draft.autoSavedAt=previous;const status=document.querySelector('#workspace-status');if(status)status.textContent='自动保存失败，请导出报告后再离开。';return '自动保存失败，请导出报告后再离开。'}
+}
+function reportVersionsKey(){return 'pacific-report-versions-'+(typeof scratchUser==='function'?scratchUser():role)}
+function reportVersionsStore(){try{return JSON.parse(localStorage.getItem(reportVersionsKey()))||{next:1,items:[]}}catch{return {next:1,items:[]}}}
+function saveReportVersion(reason='手动保存'){
+  const store=reportVersionsStore(),draft=workspaceDraft(),savedAt=new Date().toISOString();
+  const version={id:crypto.randomUUID(),number:store.next||1,savedAt,reason,draft:structuredClone(draft)};
+  store.items.unshift(version);store.next=version.number+1;
+  try{localStorage.setItem(reportVersionsKey(),JSON.stringify(store))}
+  catch{showWorkbookNotice('保存草稿失败，浏览器存储空间可能不足，请先导出报告。',true);return null}
+  return version;
+}
+function reportVersionsHTML(){
+  const current=workspaceDraft(),store=reportVersionsStore();
+  return '<div class="report-version-current"><div class="row spread"><strong>当前编辑 · 自动保存</strong><a class="compact-action button" href="#reports">继续编辑</a></div><p class="sub" data-language-original>'+escape(current.title)+' · '+reportSaveTime(current.autoSavedAt)+'</p></div>'+
+    (store.items.length?'<div class="report-version-list">'+store.items.map(v=>'<article class="report-version-row"><div><strong data-language-original>'+escape(v.draft.title)+'</strong><p class="sub">V'+String(v.number).padStart(3,'0')+' · '+escape(v.reason)+' · '+reportSaveTime(v.savedAt)+'</p><p class="tiny muted" data-language-original>'+escape((v.draft.text||'').slice(0,100)||'暂无正文')+'</p><small>'+ (v.draft.evidence?.length||0)+' 份引用素材</small></div><button type="button" class="compact-action" data-report-restore="'+v.id+'">打开此版本</button></article>').join('')+'</div>':'<p class="sub">尚无手动保存的版本，点击“保存草稿”即可保留一份独立版本。</p>');
+}
+function renderReportDrafts(){
+  main.innerHTML='<a class="back tiny" href="#reports">← 返回报告工作台</a>'+head('报告草稿','')+'<section class="panel pad report-drafts-page">'+reportVersionsHTML()+'</section>';
+}
+function openReportVersions(){if(location.hash==='#reports/drafts')renderReportDrafts();else location.hash='#reports/drafts'}
+document.addEventListener('click',event=>{
+  if(event.target.closest('[data-report-history]')){openReportVersions();return}
+  if(event.target.closest('[data-report-save]')){
+    if(document.querySelector('#report-body-editor'))saveRichReport();
+    const version=saveReportVersion();if(!version)return;
+    showWorkbookNotice('已保存报告草稿 V'+String(version.number).padStart(3,'0')+' · '+reportSaveTime(version.savedAt));
+    return;
+  }
+  const restore=event.target.closest('[data-report-restore]');if(!restore)return;
+  const version=reportVersionsStore().items.find(v=>v.id===restore.dataset.reportRestore);if(!version)return;
+  if(document.querySelector('#report-body-editor'))saveRichReport();
+  if(!saveReportVersion('切换版本前备份'))return;
+  const beforeRestore=structuredClone(workspaceDraft());
+  draftState=structuredClone(version.draft);draftRole=role;
+  const result=saveWorkspace();
+  if(result.startsWith('自动保存失败')){draftState=beforeRestore;showWorkbookNotice(result,true);return}
+  if(dialog.open)dialog.close();
+  if(location.hash==='#reports')renderWorkspace();else location.hash='#reports';
+  showWorkbookNotice('已打开报告草稿 V'+String(version.number).padStart(3,'0')+'，切换前内容已备份。');
+});
+window.addEventListener('pagehide',()=>{if(location.hash==='#reports')saveWorkspace()});
+
 function includeEvidence(result) {
   const draft=workspaceDraft();
   if(!draft.evidence.some(item=>JSON.stringify(item)===JSON.stringify(result)))draft.evidence.push(result);
@@ -536,25 +585,47 @@ function includeEvidence(result) {
 
 function renderWorkspace(preview=false) {
   const draft=workspaceDraft();
+  const saveStatus='<span id="workspace-status" role="status" class="report-autosave-status no-print">'+escape(reportAutoSaveStatus())+'</span>';
   main.innerHTML=head('报告工作台','选用总览图表和对比结果，编辑后预览与导出。')+
-    '<section class="panel toolbar no-print"><button data-work="preview" data-value="'+(!preview)+'">'+(preview?'返回编辑':'预览报告')+'</button>'+
-    '<button data-work="pdf">打印 / 导出 PDF</button><button data-work="word">导出 Word</button><span id="workspace-status" role="status" class="sub"></span></section>'+
     '<div class="workspace-grid">'+
-    '<aside class="panel pad no-print"><div class="row spread"><h2>引用素材</h2><button class="compact-action" data-scratch="open">调用草稿纸</button></div>'+
-    (draft.evidence.length?draft.evidence.map((r,i)=>'<div class="asset"><strong>'+escape(r.title)+'</strong><small>'+escape(r.detail)+'</small><button data-work="remove-evidence" data-value="'+i+'">移除</button></div>').join(''):'<p class="sub">从总览或对比分析加入素材。</p>')+
-    '<a href="#analysis/compare">打开对比分析 →</a></aside>'+
     '<div class="report-main-column"><article class="report panel pad workspace-paper">'+
-    (preview?'<h2 data-language-original>'+escape(draft.title)+'</h2><div class="report-rich-content" data-language-original>'+reportDocumentHTML(draft,true)+'</div>':
-      '<label class="editor-field">报告标题<input data-draft="title" value="'+escape(draft.title)+'"></label>'+
+    (preview?'<div class="report-document-heading"><h2 data-language-original>'+escape(draft.title)+'</h2>'+saveStatus+'</div><div class="report-rich-content" data-language-original>'+reportDocumentHTML(draft,true)+'</div>':
+      '<div class="report-document-heading"><label class="editor-field">报告标题<input data-draft="title" value="'+escape(draft.title)+'"></label>'+saveStatus+'</div>'+
       reportEditorHTML(draft)+
       '<div class="print-value"><h2 id="print-title" data-language-original>'+escape(draft.title)+'</h2><div id="print-text" class="report-rich-content" data-language-original>'+reportDocumentHTML(draft,true)+'</div></div>')+
-    '<footer>数据来源：太平洋咖啡 · 会员与散客交易</footer></article>'+
-    '<div class="report-ai-launch no-print"><button type="button" class="compact-action accent-action" data-work="toggle-ai" aria-expanded="false" aria-controls="report-ai-panel">AI报告助手</button></div>'+
+    '</article>'+
+    '<section class="panel toolbar no-print report-save-toolbar"><button type="button" data-scratch="open" aria-controls="scratch-drawer">素材库</button><button type="button" data-report-templates>模板库</button><button type="button" data-report-history>报告草稿</button><button type="button" class="primary" data-report-save>保存草稿</button><button data-work="preview" data-value="'+(!preview)+'">'+(preview?'返回编辑':'预览报告')+'</button>'+
+    '<button type="button" data-work="print-report">打印</button><button type="button" data-work="export-report">导出报告</button></section>'+
     '<section id="report-ai-panel" class="panel pad no-print" hidden><p class="sub">根据报告素材生成可编辑的复盘段落。</p>'+
     '<div class="assist-buttons"><button data-work="generate">AI数据总结</button><button data-work="ai">AI帮写</button></div>'+
     '<p id="draft-suggestion" class="preserve" aria-live="polite"></p><button id="insert-suggestion" data-work="insert" hidden>追加到正文</button></section></div></div>';
+  openScratch();
   void prepareReportImages(draft);
 }
+
+function openReportExportOptions(){
+  showDialog(localize('导出报告'),'<div class="report-export-options"><label>'+localize('报告格式')+'<select id="report-export-format"><option value="pdf">PDF (.pdf)</option><option value="word">Word (.docx)</option></select></label><p class="sub" id="report-export-hint">'+localize('PDF 将打开系统打印窗口，请选择“存储为 PDF”或“另存为 PDF”。')+'</p><div class="row"><button type="button" class="primary" data-report-export-confirm>'+localize('导出')+'</button></div></div>');
+}
+async function printWorkspaceReport(){
+  try{
+    if(document.querySelector('#report-body-editor'))saveRichReport();
+    await prepareReportImages(workspaceDraft());window.print();
+  }catch{showWorkbookNotice(localize('报告准备失败，请重试。'),true)}
+}
+document.addEventListener('change',event=>{
+  if(event.target.id!=='report-export-format')return;
+  const hint=document.querySelector('#report-export-hint');if(hint)hint.textContent=localize(event.target.value==='pdf'?'PDF 将打开系统打印窗口，请选择“存储为 PDF”或“另存为 PDF”。':'Word 将下载为可继续编辑的 .docx 文档。');
+});
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('[data-report-export-confirm]');if(!button)return;
+  const format=document.querySelector('#report-export-format')?.value;
+  button.disabled=true;
+  try{
+    if(document.querySelector('#report-body-editor'))saveRichReport();
+    await prepareReportImages(workspaceDraft());dialog.close();
+    if(format==='word')downloadWord(workspaceDraft());else window.print();
+  }catch{button.disabled=false;showWorkbookNotice(localize('报告导出失败，请重试。'),true)}
+});
 
 function draftEvidenceText() {
   return workspaceDraft().evidence.map(r=>r.title+'｜'+r.detail+'\n'+comparisonConclusionText(r)+'\n'+resultSummary(r)+(r.comparison?'':'\n'+r.note)).join('\n\n');
@@ -792,7 +863,7 @@ document.addEventListener('click',event=>{
       saveWorkspace();
       renderWorkspace();
       break;
-    case 'pdf': window.print(); break;
-    case 'word': downloadWord(workspaceDraft()); break;
+    case 'print-report': void printWorkspaceReport(); break;
+    case 'export-report': openReportExportOptions(); break;
   }
 });

@@ -91,8 +91,9 @@ const state = a => {
 const badge = s => '<span class="badge '+(s.label==='证据通过'?'ok':s.label==='暂不可估'?'':'warn')+'" title="'+escape(s.reason)+'">'+s.label+'</span>';
 function metricDisplay(value){return String(value??'').replace(/（\s*(?:HKD|单|人|家|条|件|%)\s*）|\(\s*(?:HKD|orders?|members?|stores?|units?|%)\s*\)/gi,'').replace(/\s*HKD\b/g,'').replace(/\s+(?:单|人|家|条|件)$/,'').trim()}
 function metricHeading(label,note=''){
-  const help=[/HKD/.test(label)?'金额单位：HKD':'',note].filter(Boolean).join('。');
-  return '<div class="muted"'+(help?' tabindex="0" data-metric-help="'+escape(help)+'"':'')+'>'+metricDisplay(label)+'</div>';
+  const help=note||'';
+  const title=escape(label).replace(/[（(]\s*(HKD|单|人|天|家|条|件|%)\s*[）)]/gi,(_match,unit)=>' <span class="kpi-label-unit currency-unit">'+(/^[\u4e00-\u9fff]+$/.test(unit)?'（'+unit+'）':unit)+'</span>');
+  return '<div class="muted"'+(help?' tabindex="0" data-metric-help="'+escape(help)+'"':'')+'>'+ '<span class="kpi-title-text">'+title+'</span></div>';
 }
 const metric = (label,value,note) => '<div class="metric" data-metric-export-label="'+escape(label)+'">'+metricHeading(label,note)+'<div class="big">'+metricDisplay(value)+'</div></div>';
 const head = (title,sub) => '<div class="pagehead"><h1>'+title+'</h1><p class="sub">'+sub+'</p></div>';
@@ -284,13 +285,13 @@ function summary(){
     '<section class="panel">'+controls+'</section><section class="metrics">'+
     (overview?metricWithChange('总营收（HKD）',recorded?hkd(total):'—',revenueChange):
       metric('总营收（HKD）',recorded?hkd(total):'—',escape(selected||'全部门店')))+
-    metric(overview?'总单量':'总单量',recorded?fmt(orderTotal):'—',overview?'':'单')+
-    (overview?metric('会员总数',fmt(revenueData.member_count),'')+
-      metric('新增会员数',fmt(registrations),''):'')+
+    metric('总单量（单）',recorded?fmt(orderTotal):'—','')+
+    (overview?metric('会员总数（人）',fmt(revenueData.member_count),'')+
+      metric('新增会员数（人）',fmt(registrations),''):'')+
     metric(overview?'客单价（HKD）':'客单价（HKD）',orderTotal?hkd(total/orderTotal):'—','')+
     (overview?metricWithChange('活动投入（HKD）',hkd(costTotal),spendChange):'')+
-    (overview?'<div class="metric"><div class="muted">有记录天数</div><div class="big" tabindex="0" data-metric-help="所选范围内">'+recorded+' / '+days.length+'</div></div>':
-      metric('有交易记录的天数',recorded+' / '+days.length,'所选范围内'))+'</section>'+
+    (overview?'<div class="metric">'+metricHeading('有记录天数（天）')+'<div class="big" tabindex="0" data-metric-help="所选范围内">'+recorded+' / '+days.length+'</div></div>':
+      metric('有交易记录的天数（天）',recorded+' / '+days.length,'所选范围内'))+'</section>'+
     '<div id="summary-content"></div>';
   for(const field of main.querySelectorAll('[data-scope]')){
     if(field.type==='checkbox')field.checked=!!summaryScope[field.dataset.scope];
@@ -377,7 +378,7 @@ function drawSummary(){
   if(chartNode){
     const isRevenue=settings.metric==='revenue';
     chartNode.innerHTML=chart([...rows].sort((a,b)=>a.name.localeCompare(b.name)).map(r=>({date:r.name,actual:isRevenue&&r.revenue!==null?r.revenue/100:r[settings.metric],baseline:null})),
-      {heading:isRevenue?'每日总营收':'每日总单量',unit:isRevenue?'HKD':'单',caption:'趋势按选定日期与门店展示。无交易记录的日期留空。'});
+      {axisGroup:summaryView==='store'?'store-window':'daily-total',heading:isRevenue?'每日总营收':'每日总单量',unit:isRevenue?'HKD':'单',caption:'趋势按选定日期与门店展示。无交易记录的日期留空。'});
   }
   const columns=[['name',summaryView==='day'?'日期':'门店'],...(summaryView==='store'?[['type','门店类型']]:[]),['revenue','总营收（HKD）'],['orders','总单量'],['basket','客单价（HKD）'],...(summaryView==='day'&&dailySpendAvailable()?[['cost','活动花费（HKD）']]:[]),['status','记录状态']];
   const header=columns.map(([key,label])=>{
@@ -439,15 +440,65 @@ function list(){
     '<section class="campaign-group seasonal-panel" aria-labelledby="short-title"><header><h2 id="short-title">非常设活动</h2><span class="tiny muted">'+summaryMetricLabels[viewSettings.activity.sort]+' · '+short.length+' 场</span></header>'+campaignTable(short,'非常设活动')+'</section>'+permanentPanel(long,'常设活动',longOpen);
   document.querySelector('#selection').innerHTML=picked.size?'<span class="tiny muted">已选 '+picked.size+' / 2</span><button data-action="compare" '+(picked.size<2?'disabled':'')+'>对比活动</button>':'';
 }
-function chart(points,{heading,unit='HKD',first='实际',second='对照估计',start,end,caption=''}){
+function niceChartCeiling(value){
+  if(!(value>0))return 4;
+  const raw=value/4,power=10**Math.floor(Math.log10(raw)),step=[1,2,2.5,5,10].find(n=>n*power>=raw)*power;
+  return step*4;
+}
+const chartScaleCache=new Map();
+function sharedChartScale(unit,group){
+  const key=group+'|'+unit+'|'+(group==='store-window'?summaryScope.from+'|'+summaryScope.to:'');
+  if(chartScaleCache.has(key))return chartScaleCache.get(key);
+  let peak=0;const consider=v=>{if(numeric(v))peak=Math.max(peak,v)};
+  const orders=unit.startsWith('单');
+  const dailyTotals=new Map();
+  if(group==='member-day'){
+    for(const a of Object.values(activities)){const e=a.experiment;if(e?.unit!=='member')continue;for(const groups of Object.values(e.daily))for(const name of ['treatment','control'])consider((groups[name]?.[orders?1:0]||0)/e.groups[name].n)}
+  }else if(group==='index')peak=200;
+  else if(group==='basket'){
+    for(const shop of revenueData.stores)for(const [,c,n] of shop.days)if(n>0)consider(c/100/n);
+  }else{
+    for(const shop of revenueData.stores){let sum=0;for(const [i,c,n] of shop.days){const value=orders?n:c/100;
+      if(group==='store-window'){const d=revenueData.dates[i];if(d>=summaryScope.from&&d<=summaryScope.to)sum+=value}
+      else if(group==='store-day')consider(value);
+      else dailyTotals.set(i,(dailyTotals.get(i)||0)+value);
+    }if(group==='store-window')consider(sum)}
+    if(group==='daily-total'){
+      dailyTotals.forEach(consider);
+      if(!orders)for(const a of Object.values(activities))for(const p of a.trend?.series?.revenue||[]){consider(p.actual);consider(p.baseline)}
+    }
+    if(group==='store-day')for(const a of Object.values(activities))if(a.experiment?.unit==='store')for(const rows of Object.values(a.experiment.stores))for(const [,c,n] of rows)consider(orders?n:c/100);
+  }
+  const top=niceChartCeiling(peak);chartScaleCache.set(key,top);return top;
+}
+
+const chartViewRecords=new Map();
+let chartViewSequence=0;
+function chart(points,options){
+  const {heading,unit='HKD',first='实际',second='对照估计',start,end,caption='',axisGroup,viewDomain,_chartId}=options;
   if(!points.length || !points.some(p=>numeric(p.actual)||numeric(p.baseline))) return '<p class="muted">无可用趋势数据。</p>';
   const has=points.some(p=>numeric(p.baseline));
   const all=points.flatMap(p=>[p.actual,p.baseline]).filter(numeric), w=800,h=242, sx=70,ex=775,sy=32,ey=192;
-  const axis=v=>unit==='HKD' && Math.abs(v)>=1000 ? fmt(v/1000,1)+'k' : fmt(v,unit==='指数'&&Math.abs(v)<2?2:0);
-  const top=Math.ceil(Math.max(...all)/4)*4 || 4;
+  const axis=v=>unit==='HKD' && Math.abs(v)>=1000 && (top-low)/4>=100 ? fmt(v/1000,1)+'k' : fmt(v,top-low<4?2:top-low<20?1:0);
+  const group=axisGroup||(unit.includes('/会员')?'member-day':unit.includes('/店日')?'store-day':unit==='指数'?'index':'daily-total');
+  const shared=sharedChartScale(unit,group),observed=Math.max(0,...all),defaultTop=Math.max(shared,niceChartCeiling(observed));
+  const low=viewDomain?.[0]??0,top=viewDomain?.[1]??defaultTop;
+  const independent=!!viewDomain||top>shared;
+  const viewId=_chartId||String(++chartViewSequence);
+  chartViewRecords.set(viewId,{points,options:{...options,_chartId:viewId},domain:[low,top],defaultTop});
+  if(chartViewRecords.size>200){for(const key of chartViewRecords.keys()){if(key!==viewId&&!document.querySelector('[data-chart-view="'+key+'"]'))chartViewRecords.delete(key);if(chartViewRecords.size<=150)break}}
+  const scaleIcon=path=>'<svg viewBox="0 0 20 20" aria-hidden="true">'+path+'</svg>';
+  const controls='<div class="chart-scale-tools no-print" role="group" aria-label="纵轴缩放">'+
+    '<button type="button" data-chart-scale="focus" data-scale-view="'+viewId+'" title="聚焦波动：自动放大日变化" aria-label="聚焦波动">'+scaleIcon('<path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4M6 11l3-3 3 4 2-3"/>')+'<span>聚焦</span></button>'+
+    '<button type="button" data-chart-scale="in" data-scale-view="'+viewId+'" title="放大纵轴，查看细微变化" aria-label="放大纵轴">'+scaleIcon('<circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4M6 8.5h5M8.5 6v5"/>')+'</button>'+
+    '<button type="button" data-chart-scale="out" data-scale-view="'+viewId+'" title="缩小纵轴，查看更大范围" aria-label="缩小纵轴">'+scaleIcon('<circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4M6 8.5h5"/>')+'</button>'+
+    '<span class="scale-tool-divider" aria-hidden="true"></span><button type="button" data-chart-scale="reset" data-scale-view="'+viewId+'" title="恢复统一刻度，便于跨活动比较" aria-label="恢复统一刻度" '+(!viewDomain?'disabled':'')+'>'+scaleIcon('<path d="M4.5 6a6 6 0 1 1-1 6M4.5 2.5V6H8"/>')+'<span>统一</span></button></div>';
+  const scaleNames={'daily-total':'每日合计','store-day':'每店每日','member-day':'每位会员每日','store-window':'门店区间合计',basket:'客单价',index:'基期指数'};
+  const scaleTitle=(viewDomain?'局部放大 · 独立刻度':independent?'独立刻度':'统一刻度')+' · '+(scaleNames[group]||group);
+  const scaleHelp=viewDomain?'已调整当前图表纵轴以便观察日变化；两条线同步缩放且保留全部数据点，不能与统一刻度图直接比较高度。':independent?'当前数据超出该类图表的统一范围，已扩展纵轴；请按刻度读数，不直接比较线条高度。':'同指标、同单位、同统计粒度的图表使用相同纵轴范围；筛选活动或门店不自动缩小纵轴。';
   const times=points.map(p=>Date.parse(p.date)), timed=!points.some(p=>p.label) && times.every(numeric) && times.at(-1)>times[0];
   const x=i=>sx+(ex-sx)*(timed?(times[i]-times[0])/(times.at(-1)-times[0]):i/Math.max(1,points.length-1));
-  const y=v=>ey-v/top*(ey-sy);
+  const y=v=>ey-(v-low)/(top-low)*(ey-sy);
   const path=key=>{
     let previous=false;
     return points.map((p,i)=>{
@@ -462,15 +513,31 @@ function chart(points,{heading,unit='HKD',first='实际',second='对照估计',s
     const i=points.findIndex(p=>p.date===d);
     return i<0?'':'<line x1="'+x(i)+'" x2="'+x(i)+'" y1="27" y2="'+ey+'" stroke="#c8afa1" stroke-dasharray="3 4"/><text x="'+x(i)+'" y="20" text-anchor="'+(i<points.length/2?'start':'end')+'">'+l+'</text>';
   }).join('');
-  return '<div class="legend"><span><i></i>'+first+'</span>'+(has?'<span><i class="dash"></i>'+second+'</span>':'')+'</div><div class="chart"><div class="tooltip" hidden></div><svg viewBox="0 0 '+w+' '+h+'" role="group" aria-label="'+heading+'"><text x="4" y="18">'+unit+'</text>'+
-    [0,1,2,3,4].map(i=>'<line x1="'+sx+'" x2="'+ex+'" y1="'+y(top*i/4)+'" y2="'+y(top*i/4)+'" stroke="#e9ded2"/><text x="61" y="'+(y(top*i/4)+4)+'" text-anchor="end">'+axis(top*i/4)+'</text>').join('')+markers+
+  return '<div class="chart-view" data-chart-view="'+viewId+'">'+controls+'<div class="chart-scale-label '+(independent?'scale-independent':'')+'" tabindex="0" data-metric-help="'+escape(scaleHelp)+'">'+escape(scaleTitle)+' <span>'+escape(fmt(low,top-low<20?2:0))+'–'+escape(fmt(top,top-low<20?2:0))+' '+escape(unit)+(low>0?' · 纵轴非零起点':'')+'</span></div><div class="legend"><span><i></i>'+first+'</span>'+(has?'<span><i class="dash"></i>'+second+'</span>':'')+'</div><div class="chart"><div class="tooltip" hidden></div><svg viewBox="0 0 '+w+' '+h+'" role="group" aria-label="'+heading+'"><text x="4" y="18">'+unit+'</text>'+
+    [0,1,2,3,4].map(i=>'<line x1="'+sx+'" x2="'+ex+'" y1="'+y(low+(top-low)*i/4)+'" y2="'+y(low+(top-low)*i/4)+'" stroke="#e9ded2"/><text x="61" y="'+(y(low+(top-low)*i/4)+4)+'" text-anchor="end">'+axis(low+(top-low)*i/4)+'</text>').join('')+markers+
     '<path d="'+path('actual')+'" fill="none" stroke="var(--red)" stroke-width="2.5"/>'+(has?'<path d="'+path('baseline')+'" fill="none" stroke="var(--coffee-line)" stroke-width="2" stroke-dasharray="6 5"/>':'')+
     indices.map(i=>'<text x="'+x(i)+'" y="221" text-anchor="middle">'+escape(points[i].label||points[i].date.slice(5))+'</text>').join('')+
     points.map((p,i)=>{
       const tip=escape((p.label||p.date)+'\n'+first+' '+fmt(p.actual,unit==='指数'?1:0)+' '+unit+(has?'\n'+second+' '+fmt(p.baseline,unit==='指数'?1:0)+' '+unit:''));
       return '<rect class="point" tabindex="0" role="img" aria-label="'+tip+'" data-tip="'+tip+'" data-x="'+x(i)/w+'" x="'+(x(i)-Math.min(10,(ex-sx)/points.length/2))+'" y="30" width="'+Math.min(20,(ex-sx)/points.length)+'" height="163"/>';
-    }).join('')+'</svg></div><p class="tiny muted">'+caption+'</p>';
+    }).join('')+(viewDomain?'<text x="775" y="239" text-anchor="end" font-size="10">独立刻度'+(low>0?' · 纵轴非零起点':'')+'</text>':'')+'</svg></div><p class="tiny muted">'+caption+'</p></div>';
 }
+document.addEventListener('click',event=>{
+  const button=event.target.closest?.('[data-chart-scale]');if(!button)return;
+  const id=button.dataset.scaleView,record=chartViewRecords.get(id),host=button.closest('[data-chart-view]');if(!record||!host)return;
+  const values=record.points.flatMap(p=>[p.actual,p.baseline]).filter(numeric);
+  const min=Math.min(...values),max=Math.max(...values),center=(min+max)/2;
+  const minimumSpan=Math.max((max-min)*1.2,Math.abs(center)*.08,.04);
+  const action=button.dataset.chartScale;
+  let domain;
+  if(action!=='reset'){
+    const span=action==='focus'?minimumSpan:Math.max(minimumSpan,Math.min(record.defaultTop*32,(record.domain[1]-record.domain[0])*(action==='in'?.5:2)));
+    const low=Math.max(0,center-span/2);domain=[low,Math.max(low+span,max+minimumSpan*.04)];
+  }
+  host.outerHTML=chart(record.points,{...record.options,viewDomain:domain});
+  const updated=document.querySelector('[data-chart-view="'+id+'"]');updated?.querySelector('[data-chart-scale="'+action+'"]')?.focus({preventScroll:true});
+});
+
 function waterfall(a,e){
   const t=a.attribution,g=t.increment?.gross_profit,c=t.cannibalization?.amount,n=t.net?.net_gross_profit;
   if(![g,c,n].every(numeric) || g<=0 || n<0 || c<0) return '<p class="muted">参考净增量毛利 '+money(n)+'。当前口径缺少独立的蚕食扣减额和透支数据。</p>';
@@ -591,10 +658,11 @@ function render(){
   if(section==='activities'){section='summary';id='activity'}
   section=section||'summary';
   if(section==='simulation')section='feedback';
+  if(section==='profile'&&id==='materials'){location.hash='#reports/materials';return}
   if(section==='summary'&&id==='effects'){location.hash='#summary/activity';return;}
   if(section==='activity'&&!visible().some(s=>s.activity_id===id)){location.hash='#summary';return}
   const nav=section==='activity'?'summary-activity':section==='summary'&&['day','store','activity'].includes(id)?'summary-'+id:section;
-  const activeNav=section==='analysis'?'analysis-'+(!id||id==='performance'?'performance':'compare'):nav;
+  const activeNav=section==='reports'&&['drafts','materials'].includes(id)?'reports-'+id:section==='analysis'?'analysis-'+(!id||id==='performance'?'performance':'compare'):nav;
   document.querySelectorAll('[data-nav]').forEach(a=>{
     const current=a.dataset.nav===activeNav;
     a.classList.toggle('active',current);
@@ -608,7 +676,7 @@ function render(){
     if(!id||id==='performance')renderPerformance(tab);
     else renderAnalysis(id==='compare'?tab:id);
   }
-  else if(nav==='reports') renderWorkspace();
+  else if(nav==='reports'){if(id==='drafts')renderReportDrafts();else if(id==='materials')renderMaterialLibrary();else renderWorkspace();}
   else if(nav==='profile') renderProfile();
   else if(nav==='methods') methods();
   else if(nav==='feedback') renderFeedback();

@@ -39,9 +39,9 @@ function overviewPatternPanels(shops,from,to,channelPanel=''){
     cells.push('<span tabindex="0" class="calendar-cell intensity-'+level+'" style="grid-column:'+(2+Math.floor(position/7))+
       ';grid-row:'+(position%7+1)+'" data-metric-help="'+escape(help)+'" aria-label="'+escape(help)+'"></span>');
   }
-  return '<div class="overview-pattern-grid overview-secondary-grid"><section class="panel pad"><h2 tabindex="0" data-metric-help="按星期汇总当前筛选范围的总营收，再除以该星期有交易记录的天数。单位：HKD。">星期经营表现</h2>'+
+  return '<div class="overview-pattern-grid overview-secondary-grid"><section class="panel pad overview-weekday-card"><h2 tabindex="0" data-metric-help="按星期汇总当前筛选范围的总营收，再除以该星期有交易记录的天数。单位：HKD。">星期经营表现</h2>'+
     '<div class="weekday-columns">'+bars+'</div></section>'+
-    '<section class="panel pad"><h2 tabindex="0" data-metric-help="颜色越深，当日营收越高。按当前范围的营收分位数着色，悬停色块可查看当日明细。">营收日历</h2>'+
+    '<section class="panel pad overview-calendar-card"><h2 tabindex="0" data-metric-help="颜色越深，当日营收越高。按当前范围的营收分位数着色，悬停色块可查看当日明细。">营收日历</h2>'+
     '<div class="calendar-scroll"><div class="revenue-calendar" style="grid-template-columns:18px repeat('+weeks+',15px)">'+weekdayHeaders+cells.join('')+
     '</div></div><div class="calendar-legend"><span>低</span>'+[0,1,2,3,4].map(i=>'<i class="calendar-cell intensity-'+i+'"></i>').join('')+
     '<span>高</span><i class="calendar-cell intensity-missing"></i><span>无记录</span></div>'+

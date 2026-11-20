@@ -76,7 +76,39 @@ function performanceTrend(activity,key){
       count>0&&numeric(point.actual)?point.actual/count:null;
     return {date:point.date,actual:value,baseline:null};
   });
-  return chart(points,{heading:'每日'+title,unit:key==='orders'?'单':'HKD',first:title,start:s.start,end:s.end});
+  return chart(points,{axisGroup:key==='basket'?'basket':'daily-total',heading:'每日'+title,unit:key==='orders'?'单':'HKD',first:title,start:s.start,end:s.end});
+}
+
+function performanceStoreTypeDonut(activity){
+  const rows=(activity.breakdown.dimensions.store_type?.rows||[]).filter(row=>numeric(row.revenue)&&row.revenue>0).sort((a,b)=>b.revenue-a.revenue);
+  const total=rows.reduce((sum,row)=>sum+row.revenue,0);
+  if(!total)return '<section class="panel pad store-revenue-panel"><h2>门店类型营收</h2><p class="sub">暂无可用门店营收。</p></section>';
+  const colors=['#9b3441','#557b76','#a9988d','#7b8496','#73604e','#996f83'];
+  const covered=new Set(activity.activity_summary.stores),counts={};
+  revenueData.stores.forEach(shop=>{if(covered.has(shop.name))counts[shop.type]=(counts[shop.type]||0)+1});
+  let angle=-Math.PI/2;
+  const tip=row=>row.dimension_value+'\n营收 '+fmt(row.revenue,2)+' HKD · 占比 '+pct(row.revenue/total*100)+(counts[row.dimension_value]?'\n覆盖 '+counts[row.dimension_value]+' 家门店':'');
+  const paths=rows.map((row,i)=>{
+    const sweep=row.revenue/total*Math.PI*2,finish=angle+sweep,end=sweep>=2*Math.PI?finish-.00001:finish;
+    const at=(radius,a)=>[100+radius*Math.cos(a),100+radius*Math.sin(a)].join(',');
+    const d='M'+at(78,angle)+' A78,78 0 '+(sweep>Math.PI?1:0)+' 1 '+at(78,end)+' L'+at(53,end)+' A53,53 0 '+(sweep>Math.PI?1:0)+' 0 '+at(53,angle)+'Z';angle=finish;
+    return '<path class="channel-sector" d="'+d+'" fill="'+colors[i%colors.length]+'" tabindex="0" role="img" data-channel-index="'+i+'" data-metric-help="'+escape(tip(row))+'" aria-label="'+escape(tip(row))+'"/>';
+  }).join('');
+  return '<section class="panel pad channel-panel store-revenue-panel"><h2>门店类型营收</h2><div class="store-revenue-donut-layout"><div class="channel-donut-svg"><svg viewBox="0 0 200 200" role="group" aria-label="门店类型营收占比">'+paths+'</svg><div class="donut-center"><strong>'+ (total>=10000?fmt(total/1000,1)+'k':fmt(total,0))+'</strong><small>总营收 HKD</small></div></div><div class="channel-donut-key">'+rows.map((row,i)=>'<div tabindex="0" data-channel-index="'+i+'" data-metric-help="'+escape(tip(row))+'"><i style="background:'+colors[i%colors.length]+'"></i><span>'+escape(row.dimension_value)+'<small>'+fmt(row.revenue,2)+' HKD</small></span><strong>'+pct(row.revenue/total*100)+'</strong></div>').join('')+'</div></div></section>';
+}
+
+function performanceReachPanel(activity){
+  const m=activity.metrics,hasMessages=numeric(m.sent)&&m.sent>0,hasAds=numeric(m.ad_impressions)&&m.ad_impressions>0;
+  const delivery=hasMessages&&numeric(m.delivered)?m.delivered/m.sent*100:null;
+  const messageHelp='App推送、短信等会员通知的发送与送达记录；包含打开、点击状态的消息视为已送达。按消息条数统计，不代表去重人数，与付费广告曝光不是同一批数据。';
+  const adsHelp='付费媒体的曝光、点击与媒体花费；与会员通知是并行触达渠道，不能把消息送达当作广告曝光的下一步，也不能相加成总触达人数。';
+  const icon=kind=>'<svg viewBox="0 0 24 24" aria-hidden="true">'+(kind==='message'?'<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m4 7 8 6 8-6"/>':'<path d="m4 10 13-5v14L4 14zM4 10H2v4h2m4 2 1 5h3l-1-4m10-9 2-2m-2 12 2 2"/>')+'</svg>';
+  return '<section class="panel pad reach-performance"><div class="row spread"><h2>活动触达</h2></div><div class="reach-columns">'+
+    '<section class="reach-channel"><h3 tabindex="0" data-metric-help="'+escape(messageHelp)+'">'+icon('message')+'会员通知</h3>'+
+    (hasMessages?performanceCards([['发送记录',fmt(m.sent),messageHelp],['已送达',numeric(m.delivered)?fmt(m.delivered):'—','已送达消息条数，含打开与点击状态；不是去重人数。'],['送达率',numeric(delivery)?pct(delivery):'—','已送达消息条数 ÷ 发送记录 × 100%。']])+
+      (numeric(delivery)?'<div class="reach-delivery-track" role="img" aria-label="'+escape('送达率 '+pct(delivery))+'"><i style="width:'+Math.max(0,Math.min(100,delivery))+'%"></i></div>':''):'<p class="sub reach-empty">暂无会员通知记录</p>')+'</section>'+
+    '<section class="reach-channel"><h3 tabindex="0" data-metric-help="'+escape(adsHelp)+'">'+icon('ads')+'付费广告</h3>'+
+    (hasAds?performanceCards([['曝光',fmt(m.ad_impressions),adsHelp],['点击',numeric(m.ad_clicks)?fmt(m.ad_clicks):'—','付费广告点击次数，不能与会员通知的点击记录混用。'],['点击率',numeric(m.ad_clicks)?pct(m.ad_clicks/m.ad_impressions*100):'—','广告点击次数 ÷ 广告曝光次数 × 100%。'],['媒体花费',numeric(m.ad_spend)?fmt(m.ad_spend,2)+' HKD':'—','仅付费媒体花费，已包含在活动投入中，不重复计入。']]):'<p class="sub reach-empty">暂无付费广告记录</p>')+'</section></div></section>';
 }
 
 function performanceCards(rows){
@@ -199,12 +231,8 @@ function renderPerformance(id) {
     '<option value="orders">总单量</option><option value="basket">客单价</option></select></label></div>'+
     '<div id="performance-trend" data-id="'+selected.activity_id+'">'+performanceTrend(a,'revenue')+'</div></section>'+
 
-    '<section class="panel pad"><h2>门店类型营收</h2>'+
-    performanceBars(types.map(row=>[row.dimension_value,row.revenue]),value=>fmt(value,2)+' HKD')+'</section>'+
-    '<section class="panel pad"><h2>活动消息送达</h2>'+
-    performanceBars(sent>0?[['消息记录',sent],['已送达（含打开及点击）',delivered]]:[],value=>fmt(value)+' 条')+
-    (numeric(kpis.delivery)?'<p><strong>送达率 '+pct(kpis.delivery)+'</strong></p>':'')+'</section>'+
-    (numeric(a.metrics.ad_impressions)?'<section class="panel pad advertising-performance"><h2>广告投放表现</h2>'+performanceCards([['广告曝光',fmt(a.metrics.ad_impressions),'广告投放表中该活动的曝光量合计。'],['广告点击',fmt(a.metrics.ad_clicks),'广告投放表中该活动的点击量合计。'],['媒体花费',fmt(a.metrics.ad_spend,2)+' HKD','仅付费广告花费；已包含在活动总投入中，不重复加计。'],['点击率',pct(a.metrics.ad_clicks/a.metrics.ad_impressions*100),'广告点击 ÷ 广告曝光 × 100%。']])+'</section>':'')+'</div>'+
+    performanceStoreTypeDonut(a)+
+    performanceReachPanel(a)+'</div>'+
     (stores.length?'<details class="panel fold"><summary>查看 '+stores.length+' 家门店明细</summary>'+
     table([['门店'],['总营收（HKD）','num'],['总单量','num']],stores.map(row=>
       [escape(row.dimension_value),fmt(row.revenue,2),fmt(row.orders)]))+'</details>':'')+

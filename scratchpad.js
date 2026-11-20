@@ -48,7 +48,7 @@ function normalizeScratchItem(item){
   return item;
 }
 function scratchWrite(items){
-  try{localStorage.setItem(scratchKey(),JSON.stringify(items));return true}
+  try{localStorage.setItem(scratchKey(),JSON.stringify(items));refreshCollectedStates();return true}
   catch{showWorkbookNotice('保存失败，请先导出备份。',true);return false}
 }
 function enrichScratchMetadata(item){
@@ -93,7 +93,7 @@ function scratchGroupedHTML(items){
     groups.get(key).push(item);
   }
   return [...groups.values()].map(group=>'<section class="scratch-group"><h3 data-language-original>'+
-    escape(scratchGroupTitle(group[0]))+'<small>'+group.length+' 份素材</small></h3>'+
+    escape(localize(scratchGroupTitle(group[0])))+'<small>'+localize(group.length+' 份素材')+'</small></h3>'+
     group.map(scratchItemHTML).join('')+'</section>').join('');
 }
 function scratchInfo(item){
@@ -106,28 +106,75 @@ function scratchInfo(item){
     ' · '+(item.scope.store||item.scope.district||'全部门店')+' · '+(item.scope.channel||'全部渠道'));
   return [...info,item.pageLabel||scratchPageLabel(item.page)].filter(Boolean).join('\n');
 }
+function showScratchCollectionFeedback(already=false){
+  const count=scratchRead().length;
+  const text=localize(already==='removed'?'已取消收藏':already?'这份素材已在素材库中':'已加入素材库')+' · '+(uiLanguage==='en'?count+' items':'共 '+count+' 项');
+  showWorkbookNotice(text);
+  const notice=document.getElementById('workspace-notice');
+  const action=document.createElement('a');action.href='#reports/materials';action.className='scratch-notice-action';action.textContent=localize('查看素材库');
+  action.addEventListener('click',()=>notice.classList.remove('is-visible'));
+  notice.append(action);
+  clearTimeout(workbookNoticeTimer);workbookNoticeTimer=setTimeout(()=>{notice.classList.remove('is-visible');notice.textContent=''},7000);
+  notice.onpointerenter=()=>clearTimeout(workbookNoticeTimer);
+  notice.onfocusin=()=>clearTimeout(workbookNoticeTimer);
+  const dismiss=()=>{clearTimeout(workbookNoticeTimer);workbookNoticeTimer=setTimeout(()=>{notice.classList.remove('is-visible');notice.textContent=''},4000)};
+  notice.onpointerleave=dismiss;notice.onfocusout=dismiss;
+}
 function scratchAdd(item){
   const items=scratchRead();
   if(items.some(x=>x.fingerprint===item.fingerprint)){
-    showWorkbookNotice('这份素材已在草稿纸中');return;
+    showScratchCollectionFeedback(true);return;
   }
   if(!scratchWrite([enrichScratchMetadata({...scratchContext(),...item,id:crypto.randomUUID(),remark:''}),...items]))return;
-  showWorkbookNotice('已加入素材草稿纸');
-  updateScratchCount();
+  showScratchCollectionFeedback();updateScratchCount();refreshCollectedStates();
+  if(scratchIsOpen)openScratch();
 }
 function scratchEvidence(result){
   scratchAdd({kind:'analysis',title:result.title,fingerprint:JSON.stringify(result),result:structuredClone(result)});
 }
-function scratchSnapshot(target,title){
-  if(target.matches('.metric')){const item=metricTextItem(target,title);scratchAdd({...item,fingerprint:JSON.stringify([location.hash,summaryScope,item.title,item.text])});return}
-
+function scratchSnapshotItem(target,title){
+  if(target.matches('.reach-channel')){
+    const lines=[...target.querySelectorAll('.metric')].map(metric=>{
+      const label=metric.querySelector('.muted')?.textContent.trim()||'',item=metricTextItem(metric,label);
+      const unit=/发送记录|已送达/.test(label)?' 条':/^(曝光|点击)$/.test(label)?' 次':'';
+      return item.text+unit;
+    });
+    const text=lines.length?lines.join('\n'):(target.querySelector('.reach-empty')?.textContent||'暂无数据');
+    return {kind:'text',title,text,fingerprint:JSON.stringify([location.hash,summaryScope,title,text])};
+  }
+  if(target.matches('.metric')){const item=metricTextItem(target,title);return {...item,fingerprint:JSON.stringify([location.hash,summaryScope,item.title,item.text])}}
   const copy=target.cloneNode(true);
   copy.querySelectorAll('button,.tooltip,[hidden],.chart-download,.scratch-collect').forEach(x=>x.remove());
-  // Clear transient hover graphics from the captured chart.
   copy.querySelectorAll('.overview-crosshair').forEach(x=>x.remove());
   copy.querySelectorAll('[tabindex]').forEach(x=>x.removeAttribute('tabindex'));
   const text=copy.textContent.trim();
-  scratchAdd({kind:'snapshot',title,html:copy.outerHTML,text,fingerprint:JSON.stringify([location.hash,summaryScope,title,text])});
+  return {kind:'snapshot',title,html:copy.outerHTML,text,fingerprint:JSON.stringify([location.hash,summaryScope,title,text])};
+}
+function scratchTargetTitle(target){
+  const label=target.matches('.reach-channel')?target.querySelector('h3')?.textContent:target.matches('.metric')?[...(target.querySelector('.muted')?.childNodes||[])].filter(n=>n.nodeName!=='BUTTON').map(n=>n.textContent).join(''):target.closest('section')?.querySelector('h2,h3,h4')?.textContent;
+  return label?.trim()||'数据图表';
+}
+function refreshCollectedStates(){
+  const saved=new Set(scratchRead().map(item=>item.fingerprint));
+  document.querySelectorAll('main .scratch-collectable').forEach(target=>{
+    const button=target.matches('.metric,.reach-channel,.overview-weekday-card,.overview-calendar-card')?target.querySelector('.scratch-collect'):target.parentElement?.querySelector(':scope > .visual-action-bar .scratch-collect');
+    if(!button)return;
+    const collected=saved.has(scratchSnapshotItem(target,scratchTargetTitle(target)).fingerprint);
+    button.classList.toggle('is-collected',collected);
+    const title=localize(collected?'取消收藏':'加入素材库');
+    if(button.title!==title)button.title=title;
+    if(button.getAttribute('aria-label')!==title)button.setAttribute('aria-label',title);
+    if(button.getAttribute('aria-pressed')!==String(collected))button.setAttribute('aria-pressed',String(collected));
+  });
+}
+function scratchSnapshot(target,title){
+  const candidate=scratchSnapshotItem(target,title),items=scratchRead(),index=items.findIndex(item=>item.fingerprint===candidate.fingerprint);
+  if(index<0){scratchAdd(candidate);return}
+  const removed=items[index];
+  if(!scratchWrite(items.filter(item=>item.id!==removed.id)))return;
+  scratchRemoved={key:scratchKey(),item:removed,index};
+  updateScratchCount();refreshCollectedStates();showScratchCollectionFeedback('removed');
+  if(scratchIsOpen)openScratch();
 }
 function updateScratchCount(){
   const counter=document.querySelector('#scratch-count');
@@ -138,11 +185,11 @@ function scratchRemarkHTML(item){
   return '<div class="scratch-remark-editor"><button type="button" class="scratch-pencil" data-scratch-edit-remark="'+item.id+'" title="'+localize('记录发现')+'" aria-label="'+localize('记录发现')+'" aria-expanded="'+filled+'"'+(filled?' hidden':'')+'><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12.8 3.2 4 4M3 17l4.3-1L17 6.3a1.5 1.5 0 0 0 0-2.1L15.8 3a1.5 1.5 0 0 0-2.1 0L4 12.7 3 17Z"/></svg></button><textarea rows="1" data-scratch-remark="'+item.id+'" aria-label="'+localize('记录发现')+'" placeholder="记录发现、疑问或下一步行动"'+(filled?'':' hidden')+'>'+escape(item.remark||'')+'</textarea></div>';
 }
 function scratchItemHTML(item){
-  if(item.kind==='text')return '<article class="scratch-item scratch-text-item" draggable="true" data-id="'+item.id+'"><p class="scratch-text-content" data-language-original>'+escape(item.text)+'</p>'+scratchRemarkHTML(item)+'<div class="row"><button class="compact-action" data-scratch="insert" data-id="'+item.id+'">插入报告</button><details class="scratch-text-source"><summary>来源</summary><p class="scratch-source" data-language-original>'+escape(scratchInfo(item))+'</p></details><button class="compact-action" data-scratch="remove" data-id="'+item.id+'">移除</button></div></article>';
+  if(item.kind==='text')return '<article class="scratch-item scratch-text-item" draggable="true" data-id="'+item.id+'"><p class="scratch-text-content" data-language-original>'+escape(localize(item.text))+'</p>'+scratchRemarkHTML(item)+'<div class="row"><button class="compact-action" data-scratch="insert" data-id="'+item.id+'">插入报告</button><details class="scratch-text-source"><summary>来源</summary><p class="scratch-source" data-language-original>'+escape(localize(scratchInfo(item)))+'</p></details><button class="compact-action" data-scratch="remove" data-id="'+item.id+'">移除</button></div></article>';
   return '<article class="scratch-item" draggable="true" data-id="'+item.id+'"><div class="row spread"><input class="scratch-title" aria-label="素材标题" data-scratch-title="'+item.id+'" value="'+escape(item.title)+'">'+
     '<small>'+({snapshot:'图表／指标',analysis:'分析结果',note:'笔记'}[item.kind]||'素材')+'</small></div>'+
     (item.kind!=='note'?'<div class="scratch-thumbnail" draggable="true" data-thumbnail-id="'+item.id+'">'+(item.thumbnail?'<img draggable="true" src="'+item.thumbnail+'" alt="素材缩略图">':'<small>正在生成缩略图…</small>')+'</div>':'')+
-    '<p class="scratch-source" data-language-original>'+escape(scratchInfo(item))+'</p>'+
+    '<p class="scratch-source" data-language-original>'+escape(localize(scratchInfo(item)))+'</p>'+
     '<small>'+new Date(item.time).toLocaleString('zh-CN',{hour12:false})+'</small>'+
     scratchRemarkHTML(item)+
     '<div class="row"><button class="compact-action" data-scratch="insert" data-id="'+item.id+'">插入报告</button>'+
@@ -150,12 +197,23 @@ function scratchItemHTML(item){
     '<button class="compact-action" data-scratch="up" data-id="'+item.id+'" aria-label="向前移动">↑</button>'+
     '<button class="compact-action" data-scratch="remove" data-id="'+item.id+'">移除</button></div></article>';
 }
+function renderMaterialLibrary(){
+  scratchIsOpen=false;scratchSidebarFromReport=false;
+  const drawer=document.getElementById('scratch-drawer');if(drawer)drawer.hidden=true;
+  const all=scratchRead(),query=scratchSearch.toLowerCase(),items=all.filter(item=>(item.title+' '+item.remark+' '+scratchInfo(item)).toLowerCase().includes(query));
+  main.innerHTML='<a class="back tiny" href="#reports">← 返回报告工作台</a><div class="row spread">'+head('素材库','已收藏 '+all.length+' 份素材与笔记')+'<div class="row"><button type="button" class="compact-action" data-scratch="note">写笔记</button><button type="button" class="compact-action" data-scratch="backup">导出备份</button>'+(scratchRemoved?'<button type="button" class="compact-action" data-scratch="undo">撤销移除</button>':'')+'</div></div>'+
+    '<section class="panel pad personal-material-library"><label class="scratch-search">搜索素材<input type="search" id="scratch-search" placeholder="搜索活动、素材或笔记" value="'+escape(scratchSearch)+'"></label><div class="personal-material-groups">'+
+    (items.length?scratchGroupedHTML(items):'<div class="material-library-empty"><h2>'+(all.length?'暂无匹配素材':'素材库还没有内容')+'</h2><p class="sub">'+(all.length?'试试其他关键词。':'在图表或指标旁点击书签图标，即可收藏到这里。')+'</p>'+(!all.length?'<a class="compact-action button" href="#summary">去看板收集素材</a>':'')+'</div>')+'</div></section>';
+  void prepareScratchThumbnails();
+}
+
 function openScratch(){
+  if(location.hash.startsWith('#reports/materials')){renderMaterialLibrary();return}
   loadScratchView();scratchIsOpen=true;
   scratchSidebarFromReport=location.hash==='#reports'&&scratchView.mode!=='float';
   let panel=document.getElementById('scratch-drawer');
   if(!panel){
-    panel=document.createElement('aside');panel.id='scratch-drawer';panel.setAttribute('aria-label','素材草稿纸');
+    panel=document.createElement('aside');panel.id='scratch-drawer';panel.setAttribute('aria-label','素材库');
     document.body.append(panel);
   }
   const docked=location.hash==='#reports'&&scratchView.mode!=='float';
@@ -165,14 +223,15 @@ function openScratch(){
   panel.style.left='';panel.style.top='';
   const slot=document.querySelector('.workspace-grid>aside:not(#scratch-drawer)');
   if(slot)slot.hidden=true;
-  if(docked&&slot)slot.after(panel);else document.body.append(panel);
+  const grid=document.querySelector('.workspace-grid');
+  if(docked&&grid)grid.prepend(panel);else document.body.append(panel);
   panel.hidden=false;
   const items=scratchRead().filter(item=>(item.title+' '+item.remark+' '+scratchInfo(item)).toLowerCase().includes(scratchSearch.toLowerCase()));
-  panel.innerHTML='<div class="scratch-window-head"><h2>素材草稿纸</h2><div class="scratch-window-actions">'+
+  panel.innerHTML='<div class="scratch-window-head"><h2>素材库</h2><div class="scratch-window-actions">'+
     '<button type="button" class="scratch-window-tool" data-scratch="mode" data-scratch-tip="'+(scratchView.mode==='float'?'切回左侧边栏':'切换为悬浮窗口')+'" title="'+(scratchView.mode==='float'?'切回左侧边栏':'切换悬浮窗口')+'" aria-label="'+(scratchView.mode==='float'?'切回左侧边栏':'切换悬浮窗口')+'">'+(scratchView.mode==='float'?'◧':'▣')+'</button>'+
     (scratchView.mode==='float'?'<button type="button" class="scratch-window-tool" data-scratch="pin" aria-pressed="'+!!scratchView.pinned+'" title="'+(scratchView.pinned?'解除固定，允许拖动':'固定当前位置')+'">'+(scratchView.pinned?'解除固定':'固定')+'</button>':'')+
     '<button type="button" class="scratch-window-tool" data-scratch="close" title="关闭" aria-label="关闭">×</button></div></div>'+
-    '<p class="sub">在看板中点「＋」收集，写报告时随时调用。</p>'+
+    '<p class="sub">点击看板上的书签图标收藏，写报告时随时调用。</p>'+
     '<div class="row"><button class="compact-action" data-scratch="note">＋ 写笔记</button><button class="compact-action" data-scratch="backup">导出备份</button>'+
     (scratchRemoved?'<button class="compact-action" data-scratch="undo">撤销移除</button>':'')+'</div>'+
     '<label class="scratch-search">搜索素材<input type="search" id="scratch-search" value="'+escape(scratchSearch)+'"></label>'+
@@ -215,25 +274,35 @@ function insertScratch(item){
   if(location.hash==='#reports')renderWorkspace();else location.hash='#reports';
   showWorkbookNotice('素材及备注已加入报告');
 }
-function renderProfile(){renderPersonalProfile()}
+function renderProfile(){if(location.hash.startsWith('#reports/materials'))renderMaterialLibrary();else renderPersonalProfile()}
+function markCollectionHoverOwners(){
+  document.querySelectorAll('main .visual-action-wrap').forEach(wrap=>{
+    const button=wrap.querySelector(':scope > .visual-action-bar > .scratch-collect');if(!button)return;
+    const owner=wrap.closest('section.panel,article.panel,.goal-focus-panel')||wrap;
+    owner.classList.add('collection-hover-owner');
+  });
+}
 function collectButtons(){
-  document.querySelectorAll('main .chart,main .performance-bars,main .channel-donut-svg,main .goal-ring-refined,main .metric').forEach(target=>{
-    if(target.closest('.workspace-paper,.scratch-item')||target.dataset.scratchBound)return;
+  document.querySelectorAll('main .chart,main .performance-bars,main .channel-donut-svg,main .goal-ring-refined,main .reach-channel,main .overview-weekday-card,main .overview-calendar-card,main .metric').forEach(target=>{
+    if(target.closest('.workspace-paper,.scratch-item')||target.dataset.scratchBound||target.matches('.metric')&&target.closest('.reach-channel'))return;
     const button=document.createElement('button');
-    button.className='scratch-collect no-print';button.type='button';button.textContent='＋';
-    button.title='加入素材草稿纸';button.setAttribute('aria-label','加入素材草稿纸');
+    button.className='scratch-collect no-print';button.type='button';button.innerHTML='<svg class="scratch-collect-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M7 10h4M7 14h6M7 18h4"/><path d="M15 3h6v8l-3-2-3 2z"/></svg>';
+    button.title='加入素材库';button.setAttribute('aria-label','加入素材库');
     target.dataset.scratchBound='true';
     target.classList.add('scratch-collectable');
     button.addEventListener('click',()=>{
-      const label=target.matches('.metric')?[...(target.querySelector('.muted')?.childNodes||[])].filter(n=>n.nodeName!=='BUTTON').map(n=>n.textContent).join(''):
-        target.closest('section')?.querySelector('h2,h3,h4')?.textContent;
-      scratchSnapshot(target,label?.trim()||'数据图表');
+      scratchSnapshot(target,scratchTargetTitle(target));
     });
-    if(target.matches('.metric')){
+    if(target.matches('.overview-weekday-card,.overview-calendar-card')){
+      const heading=target.querySelector('h2');if(heading){heading.classList.add('overview-collection-heading');heading.append(button)}
+    }else if(target.matches('.reach-channel')){
+      const heading=target.querySelector('h3');if(heading){heading.classList.add('reach-channel-heading-actions');heading.append(button)}
+    }else if(target.matches('.metric')){
       const heading=target.querySelector('.muted');
       if(heading){heading.classList.add('metric-heading-actions');heading.append(button)}
     }else visualActionBar(target).append(button);
   });
+  refreshCollectedStates();markCollectionHoverOwners();
 }
 document.addEventListener('click',event=>{
   const button=event.target.closest('[data-scratch]');if(!button)return;

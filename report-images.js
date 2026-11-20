@@ -18,7 +18,7 @@ function reportImageGrid(draft,preview){
   const blocks=reportBlocks(draft),rows=new Map();
   for(const block of blocks){if(!rows.has(block.row))rows.set(block.row,[]);rows.get(block.row).push(block)}
   return '<div class="report-image-droparea" data-report-dropzone>'+
-    (blocks.length?'':'<p class="report-drop-empty no-print">把草稿纸里的图表拖到这里</p>')+
+    (blocks.length?'':'<p class="report-drop-empty no-print">把素材库里的图表拖到这里</p>')+
     [...rows.values()].map(group=>'<div contenteditable="false" data-report-row="'+group[0].row+'" class="report-auto-row" style="--image-gap-share:'+14*(group.length-1)/group.length+'px">'+group.map(({r,i,j,key,src,width})=>{
       const note=r.imageRemarks?.[j]??(j===0?(r.imageRemark??r.materialRemark??r.note??''):'');
       return '<figure class="report-image-block" data-report-key="'+key+'" data-report-image-index="'+i+'" data-image-number="'+j+'" style="--image-width:'+(width||100/group.length)+'%"'+
@@ -38,10 +38,11 @@ function reportImageGrid(draft,preview){
 async function makeEvidenceImages(result){
   const host=document.createElement('div');
   host.innerHTML=evidenceHTML(result);
+  if(typeof localizeUi==='function')localizeUi(host);
   const targets=[...host.querySelectorAll('.chart,.performance-bars,.channel-donut-svg,.goal-ring-refined,.comparison-matrix')];
   if(!targets.length)targets.push(host);
   const images=[];
-  for(const target of targets){
+  for(const [imageNumber,target] of targets.entries()){
     let canvas;
     if(target.querySelector('svg')||target.querySelector('.performance-bar')){
       canvas=await chartCanvas(target);
@@ -66,12 +67,13 @@ async function makeEvidenceImages(result){
 
 let reportImagePreparing=false;
 async function prepareReportImages(draft){
+  for(const result of draft.evidence){if(result.aiAnnotatedImages?.length){delete result.aiAnnotatedImages;delete result.reportImages;}if(!result.textOnly&&result.reportImages?.length&&result.reportImageLanguage!==uiLanguage)delete result.reportImages;}
   if(reportImagePreparing)return;
   const pending=draft.evidence.filter(result=>!result.textOnly&&!result.reportImages?.length);
   if(!pending.length)return;
   reportImagePreparing=true;
   try{
-    for(const result of pending)result.reportImages=await makeEvidenceImages(result);
+    for(const result of pending){result.reportImages=await makeEvidenceImages(result);result.reportImageLanguage=uiLanguage;}
     saveWorkspace();
     if(location.hash==='#reports'&&workspaceDraft()===draft)renderWorkspace();
   }catch{

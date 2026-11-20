@@ -5,13 +5,13 @@ function decorateCurrency(root){
     const parent=root.parentElement;
     if(!parent||parent.closest('script,style,textarea,option,select,input,svg,.currency-unit,.change-up,.change-down,[contenteditable],[data-language-original],#workspace-user'))return;
     const text=root.nodeValue;
-    if(!/HKD|↑|↓|高于基准|低于基准/.test(text))return;
+    if(!/HKD|[（(](?:单|人|天|家|条|件|次|场)[）)]|↑|↓|高于基准|低于基准/.test(text))return;
     const fragment=document.createDocumentFragment();
     let start=0;
-    for(const match of text.matchAll(/HKD|高于基准|低于基准|↑|↓/g)){
+    for(const match of text.matchAll(/HKD|[（(](?:单|人|天|家|条|件|次|场)[）)]|高于基准|低于基准|↑|↓/g)){
       fragment.append(document.createTextNode(text.slice(start,match.index)));
       const token=document.createElement('span');
-      token.className=match[0]==='HKD'?'currency-unit':
+      token.className=/HKD|[（(]/.test(match[0])?'currency-unit':
         /高于|↑/.test(match[0])?'change-up':'change-down';
       token.textContent=match[0]==='高于基准'?'↑':match[0]==='低于基准'?'↓':match[0];
       fragment.append(token);

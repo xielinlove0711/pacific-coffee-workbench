@@ -2,12 +2,12 @@
 
 function cleanReportHTML(html){
   const doc=document.createElement('div');doc.innerHTML=html;
-  const allowed=new Set(['P','DIV','BR','H1','H2','H3','STRONG','B','EM','I','U','UL','OL','LI','BLOCKQUOTE']);
+  const allowed=new Set(['P','DIV','BR','H1','H2','H3','STRONG','B','EM','I','U','UL','OL','LI','BLOCKQUOTE','SPAN']);
   for(const row of doc.querySelectorAll('[data-report-row]'))row.replaceChildren();
   for(const element of [...doc.querySelectorAll('*')].reverse()){
     if(['SCRIPT','STYLE','IFRAME','OBJECT'].includes(element.tagName)){element.remove();continue}
     if(!allowed.has(element.tagName)){element.replaceWith(...element.childNodes);continue}
-    for(const attribute of [...element.attributes])if(!(element.tagName==='DIV'&&attribute.name==='data-report-row'))element.removeAttribute(attribute.name);
+    for(const attribute of [...element.attributes]){if(element.tagName==='DIV'&&attribute.name==='data-report-row')continue;if(element.tagName==='LI'&&['data-insight-extreme','data-insight-figure'].includes(attribute.name))continue;if(element.tagName==='LI'&&attribute.name==='tabindex'&&attribute.value==='0')continue;if(element.tagName==='SPAN'&&attribute.name==='class'){const safe=attribute.value.split(/\s+/).filter(c=>['report-insight-change','change-up','change-down','change-flat'].includes(c));if(safe.length){element.setAttribute('class',safe.join(' '));continue}}element.removeAttribute(attribute.name);}
   }
   return doc.innerHTML;
 }
@@ -25,7 +25,7 @@ function reportEditorHTML(draft){
     '<select id="report-block-type" aria-label="标题层级"><option value="p">正文</option><option value="h1">标题 1</option>'+
     '<option value="h2">标题 2</option><option value="h3">标题 3</option><option value="blockquote">引用</option></select>'+
     buttons.map(([command,label,title])=>'<button type="button" class="editor-tool" data-editor-command="'+command+'" title="'+title+
-      '" aria-label="'+title+'">'+label+'</button>').join('')+'</div>'+
+      '" aria-label="'+title+'">'+label+'</button>').join('')+'<button type="button" class="compact-action accent-action report-ai-button" data-work="toggle-ai" aria-expanded="false" aria-controls="report-ai-context"><svg class="report-ai-spark" viewBox="0 0 24 24" aria-hidden="true"><path class="ai-spark-main" d="m10 3 2.1 5.9L18 11l-5.9 2.1L10 19l-2.1-5.9L2 11l5.9-2.1Z"/><path class="ai-spark-small" d="m19 2 .9 2.6L22.5 5.5l-2.6.9L19 9l-.9-2.6-2.6-.9 2.6-.9Z"/><circle class="ai-spark-dot" cx="20" cy="18" r="1.3"/></svg><span>AI报告助手</span></button></div>'+
     '<div id="report-body-editor" class="report-rich-content" contenteditable="true" role="textbox" aria-label="报告正文" aria-multiline="true" data-placeholder="写下活动表现、发现与下一步行动">'+
     reportDocumentHTML(draft,false)+'</div>';
 }
