@@ -643,6 +643,9 @@ function reports(){
   main.innerHTML=head('复盘报告',storeMode()?store+' · 本店复盘摘要':'预览一页摘要，按岗位编辑和定稿。')+
     '<section class="panel">'+table([['活动'],['报告状态'],['证据状态'],['操作']],visible().map(s=>[escape(s.name),storeMode()?'本店摘要':reportState(s.activity_id),badge(state(activities[s.activity_id])),link(s.activity_id,'report','预览摘要 →','entry')]))+'</section>';
 }
+function renderGuide(){
+  main.innerHTML=head('使用指南','')+'<section class="panel pad"><a href="https://my.feishu.cn/docx/SEmSdIXAKogYpBxcjvPcPVv9ntz?from=from_copylink" target="_blank" rel="noopener noreferrer">太平洋咖啡营销复盘工作台-使用指南</a></section>';
+}
 function methods(){
   main.innerHTML=head('帮助与方法','项目规则、数据来源与市场经理工作区')+
   '<section class="panel pad"><h2>证据与报告规则</h2>'+table([['检查'],['项目规则'],['未通过后的处理']],[
@@ -670,7 +673,7 @@ function render(){
     else a.removeAttribute('aria-current');
   });
   if(nav!=='feedback')feedbackReference=location.hash||'#summary';
-  if(nav==='methods'||nav==='feedback') document.querySelector('#helpNav').open=true;
+  if(['methods','feedback','guide'].includes(nav))setNavigationExpanded(document.querySelector('#helpNav .nav-disclosure'),true);
   if(section==='activity') detail(id, ['overview','evidence','report'].includes(tab)?tab:'overview');
   else if(nav==='analysis'){
     if(!id||id==='performance')renderPerformance(tab);
@@ -678,6 +681,7 @@ function render(){
   }
   else if(nav==='reports'){if(id==='drafts')renderReportDrafts();else if(id==='materials')renderMaterialLibrary();else renderWorkspace();}
   else if(nav==='profile') renderProfile();
+  else if(nav==='guide') renderGuide();
   else if(nav==='methods') methods();
   else if(nav==='feedback') renderFeedback();
   else {summaryView=['day','store','activity'].includes(id)?id:'overview';summary()}

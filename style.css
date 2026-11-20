@@ -177,7 +177,7 @@ button:focus-visible,.compact-action:focus-visible{outline-offset:3px}
 .workspace-notice{position:fixed;right:20px;bottom:20px;z-index:900;max-width:calc(100vw - 40px);padding:8px 12px;
   background:#314c40;color:white;border-radius:8px;box-shadow:0 4px 16px #29191335;font-size:13px;
   opacity:0;visibility:hidden;pointer-events:none;transition:opacity 130ms ease}
-.workspace-notice.is-visible{opacity:1;visibility:visible}
+.workspace-notice.is-visible{opacity:1;pointer-events:auto}
 .workspace-notice.notice-error{background:var(--deep-red)}
 @media(prefers-reduced-motion:reduce){button,.compact-action,.workspace-notice{transition:none}}
 .nav-symbol-grid,.nav-symbol-document{height:17px;position:relative}
@@ -576,7 +576,7 @@ body:has(#scratch-drawer.scratch-floating:not([hidden])) .workspace-grid{grid-te
 
 .scratch-window-tool[data-scratch-tip]{position:relative}
 .scratch-window-tool[data-scratch-tip]::after{content:attr(data-scratch-tip);position:absolute;right:0;top:calc(100% + 7px);padding:6px 9px;border-radius:5px;background:#46332f;color:#fff;font-size:11px;font-weight:400;line-height:1.5;white-space:nowrap;pointer-events:none;opacity:0;visibility:hidden;z-index:10;box-shadow:0 3px 10px #30211f20}
-.scratch-window-tool[data-scratch-tip]:hover::after,.scratch-window-tool[data-scratch-tip]:focus-visible::after{opacity:1;visibility:visible}
+.scratch-window-tool[data-scratch-tip]:hover::after,.scratch-window-tool[data-scratch-tip]:focus-visible::after{opacity:1;pointer-events:auto}
 
 .scratch-thumbnail[draggable="true"],.scratch-thumbnail img[draggable="true"]{cursor:grab;-webkit-user-drag:element;user-select:none}
 .scratch-thumbnail:active,.scratch-thumbnail img:active{cursor:grabbing}
@@ -747,3 +747,17 @@ html[lang=en] body.ai-explanation-open .workspace-grid:has(>#scratch-drawer.scra
 }
 
 @media(hover:hover){.collection-hover-owner:hover .visual-action-bar>.scratch-collect,.collection-hover-owner:focus-within .visual-action-bar>.scratch-collect{opacity:1!important;pointer-events:auto}}
+
+/* Answer feedback stays quiet until its complete answer is hovered or focused. */
+.ai-response-feedback{display:flex;align-items:center;gap:5px;margin-top:10px;opacity:0;pointer-events:none;transition:opacity .15s ease}
+.ai-demo-output:not([data-generating="true"]):hover>.ai-response-feedback,.ai-demo-output:not([data-generating="true"]):focus-within>.ai-response-feedback,.ai-history-response:hover>.ai-response-feedback,.ai-history-response:focus-within>.ai-response-feedback{opacity:1;pointer-events:auto}
+.ai-response-feedback .ai-feedback-button{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:5px;margin:0;border:0;border-radius:5px;background:transparent;color:var(--muted);cursor:pointer;box-shadow:none;transition:color .15s,background .15s}
+.ai-feedback-button svg{width:16px;height:16px;pointer-events:none}.ai-feedback-down{transform:rotate(180deg)}
+.ai-response-feedback .ai-feedback-button:hover,.ai-response-feedback .ai-feedback-button.is-selected{color:var(--red);background:var(--soft)}
+.ai-feedback-button.is-selected svg{fill:currentColor;fill-opacity:.14}.ai-feedback-button:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.ai-demo-output[data-generating="true"]>.ai-response-feedback{display:none}
+@media(hover:none){.ai-response-feedback{opacity:1;pointer-events:auto}}
+@media(prefers-reduced-motion:reduce){.ai-response-feedback,.ai-response-feedback .ai-feedback-button{transition:none}}
+
+.ai-feedback-toast{position:fixed;left:50%;bottom:24vh;transform:translate(-50%,6px);z-index:1200;padding:10px 18px;max-width:calc(100vw - 40px);border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink);box-shadow:var(--floating-shadow,0 6px 24px #30211f24);font-size:13px;line-height:1.5;opacity:0;pointer-events:none;transition:opacity .16s ease,transform .16s ease}.ai-feedback-toast.is-visible{opacity:1;transform:translate(-50%,0)}
+@media(prefers-reduced-motion:reduce){.ai-feedback-toast{transition:none}}

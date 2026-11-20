@@ -16,15 +16,35 @@
  function historyKey(){return 'pacific-ai-report-history-'+(typeof scratchUser==='function'?scratchUser():'manager')}
  function readHistory(){try{return JSON.parse(sessionStorage.getItem(historyKey()))||[]}catch{return []}}
  function writeHistory(items){try{sessionStorage.setItem(historyKey(),JSON.stringify(items.slice(-10)))}catch{}}
+ function feedbackHTML(id,value=''){
+  const labels=['赞','踩'];
+  const path='<path d="M7 10v10H3V10h4Zm0 0 4-7c.4-.7 1.5-.4 1.5.5V8H18a2 2 0 0 1 2 2.4l-1.3 7.2A3 3 0 0 1 15.8 20H7"/>';
+  return '<div class="ai-response-feedback" data-feedback-turn="'+escape(id)+'" role="group" aria-label="'+'回答反馈'+'">'+['up','down'].map((vote,i)=>'<button type="button" class="ai-feedback-button'+(value===vote?' is-selected':'')+'" data-ai-feedback="'+vote+'" aria-label="'+labels[i]+'" title="'+labels[i]+'" aria-pressed="'+(value===vote)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"'+(i?' class="ai-feedback-down"':'')+'>'+path+'</svg></button>').join('')+'</div>';
+ }
+ let feedbackToastTimer;
+ function showFeedbackThanks(){
+  let toast=document.querySelector('.ai-feedback-toast');
+  if(!toast){toast=document.createElement('div');toast.className='ai-feedback-toast no-print';toast.setAttribute('role','status');toast.setAttribute('aria-live','polite');document.body.append(toast)}
+  toast.textContent='感谢你的反馈';
+  clearTimeout(feedbackToastTimer);toast.classList.add('is-visible');
+  feedbackToastTimer=setTimeout(()=>toast.classList.remove('is-visible'),1800);
+ }
+ document.addEventListener('click',event=>{
+  const button=event.target.closest('[data-ai-feedback]');if(!button)return;
+  const group=button.closest('[data-feedback-turn]'),items=readHistory(),turn=items.find(t=>t.id===group.dataset.feedbackTurn);if(!turn)return;
+  turn.feedback=turn.feedback===button.dataset.aiFeedback?'':button.dataset.aiFeedback;writeHistory(items);
+  if(turn.feedback)showFeedbackThanks();
+  group.querySelectorAll('[data-ai-feedback]').forEach(n=>{const selected=n.dataset.aiFeedback===turn.feedback;n.classList.toggle('is-selected',selected);n.setAttribute('aria-pressed',String(selected))});
+ });
  function renderHistory(){
   if(!card)return;
   card.querySelector('.ai-demo-history')?.remove();
   const items=readHistory().filter(t=>t.id!==currentTurnId);if(!items.length)return;
-  const html='<div class="ai-demo-history"><span class="tiny muted">最近对话（最多10轮）</span>'+items.map(t=>'<details class="ai-history-turn"><summary data-language-original>'+escape(t.command)+'<small>'+new Date(t.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false})+(t.applied?' · 已应用':'')+'</small></summary><div class="ai-history-response" data-language-original>'+cleanReportHTML(t.html)+'</div></details>').join('')+'</div>';
+  const html='<div class="ai-demo-history"><span class="tiny muted">最近对话（最多10轮）</span>'+items.map(t=>'<details class="ai-history-turn"><summary data-language-original>'+escape(t.command)+'<small>'+new Date(t.at).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',hour12:false})+(t.applied?' · 已应用':'')+'</small></summary><div class="ai-history-response" data-language-original>'+cleanReportHTML(t.html)+feedbackHTML(t.id,t.feedback)+'</div></details>').join('')+'</div>';
   card.querySelector('.ai-demo-context').insertAdjacentHTML('afterend',html);
  }
  function archiveResponse(output){
-  const copy=output.cloneNode(true);copy.querySelectorAll('button').forEach(n=>n.remove());
+  const copy=output.cloneNode(true);copy.querySelectorAll('.ai-response-feedback,button').forEach(n=>n.remove());
   const items=readHistory().filter(t=>t.id!==currentTurnId);
   items.push({id:currentTurnId,command:currentCommand,html:copy.innerHTML,at:new Date().toISOString(),applied:false});writeHistory(items);
  }
@@ -191,7 +211,7 @@
      output.innerHTML='<p class="ai-demo-summary">'+escape(lang(proposal.summary))+'</p><p class="sub">已应用到当前报告，可用工具栏撤销。</p>';
     }else output.innerHTML='<p class="sub">作用范围：当前报告</p><p class="ai-demo-summary">'+escape(lang(proposal.summary))+'</p><details><summary>预览整理内容</summary><div class="ai-demo-result" data-language-original>'+proposal.html+'</div></details><button type="button" class="compact-action primary" data-ai-demo="apply">应用到报告</button>';
    }
-   archiveResponse(output);renderHistory();
+   archiveResponse(output);output.insertAdjacentHTML('beforeend',feedbackHTML(currentTurnId));renderHistory();
    if(action==='format'){const items=readHistory(),turn=items.find(t=>t.id===currentTurnId);if(turn){turn.applied=true;writeHistory(items)}}
    if(!card.classList.contains('is-explanation-sidebar'))card.style.top=Math.max(12,Math.min(parseFloat(card.style.top)||12,innerHeight-card.offsetHeight-12))+'px';
    }catch{if(card)output.textContent=lang('处理失败，请重试。')}finally{if(card&&token===generation){setChatBusy(false);card.querySelector('.ai-demo-chat-feed')?.scrollTo({top:999999,behavior:'smooth'})}}
